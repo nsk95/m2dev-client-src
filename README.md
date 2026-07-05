@@ -10,7 +10,7 @@ This repository contains the source code necessary to compile the game client ex
 >
 > cmake --build build
 
-**For more installation/configuration, check out the [instructions](#installationconfiguration) below.**
+**For more installation/configuration, check out the  [instructions](#installationconfiguration) below.**
 
 ---
 
