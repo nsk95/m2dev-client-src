@@ -83,10 +83,14 @@ bool CPythonNetworkStream::__RecvLoginSuccessPacket3()
 
 	if (__DirectEnterMode_IsSet())
 	{
+		// FIX: DirectEnter-Auto-Select. Distraught liess diesen Block leer,
+		// dadurch wurde nach dem Auto-Login nie CHARACTER_SELECT gesendet und
+		// man kam nie ins Spiel (zurueck zum Login nach ~5s).
+		SendSelectCharacterPacket((BYTE)m_kDirectEnterMode.m_dwChrSlotIndex);
 	}
 	else
 	{
-		PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_SELECT], "Refresh", Py_BuildValue("()"));		
+		PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_SELECT], "Refresh", Py_BuildValue("()"));
 	}
 
 	return true;
@@ -112,6 +116,11 @@ bool CPythonNetworkStream::__RecvLoginSuccessPacket4()
 	if (!__DirectEnterMode_IsSet())
 	{
 		PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_SELECT], "Refresh", Py_BuildValue("()"));
+	}
+	else
+	{
+		// FIX: DirectEnter-Auto-Select (wie __RecvLoginSuccessPacket3).
+		SendSelectCharacterPacket((BYTE)m_kDirectEnterMode.m_dwChrSlotIndex);
 	}
 
 	return true;
