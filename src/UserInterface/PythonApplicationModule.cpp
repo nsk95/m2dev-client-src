@@ -566,6 +566,18 @@ PyObject * appSetFPS(PyObject * poSelf, PyObject * poArgs)
 	return Py_BuildNone();
 }
 
+// ELEMENTIA: toggle the fixed-step FPS unlock (app.SetUnlockFPS(0/1))
+PyObject * appSetUnlockFPS(PyObject * poSelf, PyObject * poArgs)
+{
+	int	iEnable;
+	if (!PyTuple_GetInteger(poArgs, 0, &iEnable))
+		return Py_BuildException();
+
+	CPythonApplication::Instance().SetUnlockFPS(iEnable ? true : false);
+
+	return Py_BuildNone();
+}
+
 PyObject * appSetGlobalCenterPosition(PyObject * poSelf, PyObject * poArgs)
 {
 	int x;
@@ -1226,6 +1238,7 @@ void initapp()
 		{ "GetFaceSpeed",				appGetFaceSpeed,				METH_VARARGS },
 		{ "GetFaceCount",				appGetFaceCount,				METH_VARARGS },
 		{ "SetFPS",						appSetFPS,						METH_VARARGS },
+		{ "SetUnlockFPS",				appSetUnlockFPS,				METH_VARARGS },	// ELEMENTIA
 		{ "SetGlobalCenterPosition",	appSetGlobalCenterPosition,		METH_VARARGS },
 		{ "SetCenterPosition",			appSetCenterPosition,			METH_VARARGS },
 		{ "GetCursorPosition",			appGetCursorPosition,			METH_VARARGS },

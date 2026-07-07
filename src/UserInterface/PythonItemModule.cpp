@@ -654,12 +654,14 @@ void initItem()
 	// Item Sub Type
 	PyModule_AddIntConstant(poModule, "COSTUME_TYPE_BODY",			CItemData::COSTUME_BODY);
 	PyModule_AddIntConstant(poModule, "COSTUME_TYPE_HAIR",			CItemData::COSTUME_HAIR);
+	PyModule_AddIntConstant(poModule, "COSTUME_TYPE_WEAPON",			CItemData::COSTUME_WEAPON);		// ELEMENTIA-COSTUME
 
 	// 인벤토리 및 장비창에서의 슬롯 번호
 	PyModule_AddIntConstant(poModule, "COSTUME_SLOT_START",			c_Costume_Slot_Start);
 	PyModule_AddIntConstant(poModule, "COSTUME_SLOT_COUNT",			c_Costume_Slot_Count);
 	PyModule_AddIntConstant(poModule, "COSTUME_SLOT_BODY",			c_Costume_Slot_Body);
 	PyModule_AddIntConstant(poModule, "COSTUME_SLOT_HAIR",			c_Costume_Slot_Hair);
+	PyModule_AddIntConstant(poModule, "COSTUME_SLOT_WEAPON",			c_Costume_Slot_Weapon);			// ELEMENTIA-COSTUME
 	PyModule_AddIntConstant(poModule, "COSTUME_SLOT_END",			c_Costume_Slot_End);
 #endif
 
@@ -696,6 +698,7 @@ void initItem()
 	PyModule_AddIntConstant(poModule, "USE_DETACHMENT",				CItemData::USE_DETACHMENT);
 	PyModule_AddIntConstant(poModule, "USE_TIME_CHARGE_PER",		CItemData::USE_TIME_CHARGE_PER);
 	PyModule_AddIntConstant(poModule, "USE_TIME_CHARGE_FIX",		CItemData::USE_TIME_CHARGE_FIX);
+	PyModule_AddIntConstant(poModule, "USE_MOUNT",					CItemData::USE_MOUNT);				// ELEMENTIA-MOUNT
 
 	PyModule_AddIntConstant(poModule, "MATERIAL_DS_REFINE_NORMAL",	CItemData::MATERIAL_DS_REFINE_NORMAL);
 	PyModule_AddIntConstant(poModule, "MATERIAL_DS_REFINE_BLESSED",	CItemData::MATERIAL_DS_REFINE_BLESSED);

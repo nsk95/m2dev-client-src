@@ -101,8 +101,12 @@ enum EDragonSoulStepTypes
 
 #ifdef ENABLE_COSTUME_SYSTEM
 	const DWORD c_Costume_Slot_Start = c_Equipment_Start + CItemData::WEAR_COSTUME_BODY;
-	const DWORD	c_Costume_Slot_Body = c_Costume_Slot_Start + CItemData::COSTUME_BODY;
-	const DWORD	c_Costume_Slot_Hair = c_Costume_Slot_Start + CItemData::COSTUME_HAIR;
+	const DWORD	c_Costume_Slot_Body = c_Equipment_Start + CItemData::WEAR_COSTUME_BODY;
+	const DWORD	c_Costume_Slot_Hair = c_Equipment_Start + CItemData::WEAR_COSTUME_HAIR;
+	// ELEMENTIA-COSTUME: weapon transmog slot lives at WEAR_COSTUME_WEAPON (24), which is NOT contiguous
+	// with body/hair (19/20) because 21-23 are ring/ring/belt. So costume slots must be addressed
+	// explicitly (see playerIsCostumeSlot) rather than via a start..end range.
+	const DWORD	c_Costume_Slot_Weapon = c_Equipment_Start + CItemData::WEAR_COSTUME_WEAPON;
 
 	const DWORD c_Costume_Slot_Count = CItemData::COSTUME_NUM_TYPES;
 	const DWORD c_Costume_Slot_End = c_Costume_Slot_Start + c_Costume_Slot_Count;

@@ -64,10 +64,10 @@ const D3DXCOLOR& CInstanceBase::GetIndexedNameColor(UINT eNameColor)
 	return g_akD3DXClrName[eNameColor];
 }
 
+// ELEMENTIA: floating damage numbers. Config-gated by CPythonSystem::IsShowDamage().
+// Surfaces incoming damage at the actor, color-coded by flag (see ProcessDamage).
 void CInstanceBase::AddDamageEffect(DWORD damage, BYTE flag, BOOL bSelf, BOOL bTarget)
 {
-	TraceError("AddDamageEffect: damage=%u flag=%u bSelf=%d bTarget=%d IsShowDamage=%d",
-		damage, flag, bSelf, bTarget, CPythonSystem::Instance().IsShowDamage());
 	if(CPythonSystem::Instance().IsShowDamage())
 	{
 		SEffectDamage sDamage;
@@ -76,16 +76,20 @@ void CInstanceBase::AddDamageEffect(DWORD damage, BYTE flag, BOOL bSelf, BOOL bT
 		sDamage.damage = damage;
 		sDamage.flag = flag;
 		m_DamageQueue.push_back(sDamage);
-		TraceError("AddDamageEffect: Queued, queue size now=%d", m_DamageQueue.size());
 	}
 }
 
+// ELEMENTIA: color-coded floating damage numbers.
+//  - normal (self)   -> "damage_"  digit set (self-hit colour)
+//  - normal (target) -> "target_"  digit set (mob-hit colour)
+//  - penetrate       -> "poison_"  digit set (green) so pen hits read distinctly
+//  - critical        -> normal digits PLUS the critical.mse burst for a distinct colour
+// Uses only assets that ship in effect/affect/damagevalue, so it can never fail to a
+// missing texture. Crash-safe: bounded digit loop, no logging in the hot path.
 void CInstanceBase::ProcessDamage()
 {
 	if(m_DamageQueue.empty())
 		return;
-
-	TraceError("ProcessDamage: Queue not empty, processing...");
 
 	SEffectDamage sDamage = m_DamageQueue.front();
 
@@ -95,8 +99,6 @@ void CInstanceBase::ProcessDamage()
 	BYTE flag = sDamage.flag;
 	BOOL bSelf = sDamage.bSelf;
 	BOOL bTarget = sDamage.bTarget;
-
-	TraceError("ProcessDamage: damage=%u flag=%u bSelf=%d bTarget=%d", damage, flag, bSelf, bTarget);
 
 	CCamera * pCamera = CCameraManager::Instance().GetCurrentCamera();
 	float cameraAngle = GetDegreeFromPosition2(pCamera->GetTarget().x,pCamera->GetTarget().y,pCamera->GetEye().x,pCamera->GetEye().y);
@@ -112,48 +114,39 @@ void CInstanceBase::ProcessDamage()
 
 	if ( (flag & DAMAGE_DODGE) || (flag & DAMAGE_BLOCK) )
 	{
-		TraceError("ProcessDamage: DODGE or BLOCK");
 		if(bSelf)
 			rkEftMgr.CreateEffect(ms_adwCRCAffectEffect[EFFECT_DAMAGE_MISS],v3Pos,v3Rot);
 		else
 			rkEftMgr.CreateEffect(ms_adwCRCAffectEffect[EFFECT_DAMAGE_TARGETMISS],v3Pos,v3Rot);
-		//__AttachEffect(EFFECT_DAMAGE_MISS);
 		return;
 	}
-	else if (flag & DAMAGE_CRITICAL)
+
+	// ELEMENTIA: critical hits also fire the distinct critical burst (numbers still shown below).
+	if (flag & DAMAGE_CRITICAL)
 	{
-		TraceError("ProcessDamage: CRITICAL");
-		//rkEftMgr.CreateEffect(ms_adwCRCAffectEffect[EFFECT_DAMAGE_CRITICAL],v3Pos,v3Rot);
-		//return; 숫자도 표시.
+		rkEftMgr.CreateEffect(ms_adwCRCAffectEffect[EFFECT_DAMAGE_CRITICAL],v3Pos,v3Rot);
 	}
 
 	std::string strDamageType;
 	DWORD rdwCRCEft = 0;
-	/*
-	if ( (flag & DAMAGE_POISON) )
-	{
-		strDamageType = "poison_";
-		rdwCRCEft = EFFECT_DAMAGE_POISON;
-	}
-	else
-	*/
+
+	// ELEMENTIA: penetrate hits use the green "poison_" digit set for a distinct colour.
+	bool bPenetrate = (flag & DAMAGE_PENETRATE) != 0;
+
 	{
 		if (bSelf)
 		{
-			TraceError("ProcessDamage: bSelf path - damage_");
-			strDamageType = "damage_";
+			strDamageType = bPenetrate ? "poison_" : "damage_";
 
 			if (m_bDamageEffectType == 0)
-				rdwCRCEft = EFFECT_DAMAGE_SELFDAMAGE;
+				rdwCRCEft = bPenetrate ? EFFECT_DAMAGE_POISON : EFFECT_DAMAGE_SELFDAMAGE;
 			else
-				rdwCRCEft = EFFECT_DAMAGE_SELFDAMAGE2;
+				rdwCRCEft = bPenetrate ? EFFECT_DAMAGE_POISON : EFFECT_DAMAGE_SELFDAMAGE2;
 
 			m_bDamageEffectType = !m_bDamageEffectType;
 		}
 		else if (!bTarget || ((IsAffect(AFFECT_INVISIBILITY) || IsAffect(AFFECT_EUNHYEONG)) && bTarget))
 		{
-			TraceError("ProcessDamage: non-target path (early return) bTarget=%d INVIS=%d EUNHYEONG=%d",
-				bTarget, IsAffect(AFFECT_INVISIBILITY), IsAffect(AFFECT_EUNHYEONG));
 			strDamageType = "nontarget_";
 			rdwCRCEft = EFFECT_DAMAGE_NOT_TARGET;
 
@@ -161,14 +154,10 @@ void CInstanceBase::ProcessDamage()
 		}
 		else
 		{
-			TraceError("ProcessDamage: target path - target_");
-			strDamageType = "target_";
-			rdwCRCEft = EFFECT_DAMAGE_TARGET;
+			strDamageType = bPenetrate ? "poison_" : "target_";
+			rdwCRCEft = bPenetrate ? EFFECT_DAMAGE_POISON : EFFECT_DAMAGE_TARGET;
 		}
 	}
-	
-	TraceError("ProcessDamage: Creating effect strDamageType=%s rdwCRCEft=%u effectCRC=%u",
-		strDamageType.c_str(), rdwCRCEft, ms_adwCRCAffectEffect[rdwCRCEft]);
 
 	DWORD index = 0;
 	DWORD num = 0;
@@ -176,20 +165,14 @@ void CInstanceBase::ProcessDamage()
 
 	while (damage > 0)
 	{
-		if (index > 7)
-		{
-			TraceError("ProcessDamage무한루프 가능성");
-
+		if (index > 7)   // ELEMENTIA: bound the digit loop (max 8 digits)
 			break;
-		}
 
 		num = damage%10;
 		damage /= 10;
 		char numBuf[MAX_PATH];
 		sprintf(numBuf, "%d.dds", num);
 		textures.push_back("d:/ymir work/effect/affect/damagevalue/"  +strDamageType + numBuf);
-
-		TraceError("ProcessDamage: texture path=%s", textures.back().c_str());
 
 		rkEftMgr.SetEffectTextures(ms_adwCRCAffectEffect[rdwCRCEft],textures);
 
@@ -209,10 +192,9 @@ void CInstanceBase::ProcessDamage()
 
 		D3DXMatrixMultiply(&matrix, &pCamera->GetViewMatrix(), &matrix);
 
-		DWORD effectResult = rkEftMgr.CreateEffect(ms_adwCRCAffectEffect[rdwCRCEft], D3DXVECTOR3(matrix._41, matrix._42, matrix._43)
+		rkEftMgr.CreateEffect(ms_adwCRCAffectEffect[rdwCRCEft], D3DXVECTOR3(matrix._41, matrix._42, matrix._43)
 			,v3Rot);
-		TraceError("ProcessDamage: CreateEffect returned %u", effectResult);	
-		
+
 		textures.clear();
 
 		index++;

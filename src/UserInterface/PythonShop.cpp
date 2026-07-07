@@ -158,6 +158,23 @@ void CPythonShop::BuildPrivateShop(const char * c_szName)
 	CPythonNetworkStream::Instance().SendBuildPrivateShopPacket(c_szName, ItemStock);
 }
 
+// ELEMENTIA offline shop: build from the same stock UI but send the offline packet.
+void CPythonShop::BuildOfflineShop(const char * c_szName)
+{
+	std::vector<TShopItemTable> ItemStock;
+	ItemStock.reserve(m_PrivateShopItemStock.size());
+
+	TPrivateShopItemStock::iterator itor = m_PrivateShopItemStock.begin();
+	for (; itor != m_PrivateShopItemStock.end(); ++itor)
+	{
+		ItemStock.push_back(itor->second);
+	}
+
+	std::sort(ItemStock.begin(), ItemStock.end(), ItemStockSortFunc());
+
+	CPythonNetworkStream::Instance().SendBuildOfflineShopPacket(c_szName, ItemStock);
+}
+
 void CPythonShop::Open(BOOL isPrivateShop, BOOL isMainPrivateShop)
 {
 	m_isShoping = TRUE;
@@ -376,6 +393,17 @@ PyObject * shopBuildPrivateShop(PyObject * poSelf, PyObject * poArgs)
 	return Py_BuildNone();
 }
 
+// ELEMENTIA offline shop
+PyObject * shopBuildOfflineShop(PyObject * poSelf, PyObject * poArgs)
+{
+	char * szName;
+	if (!PyTuple_GetString(poArgs, 0, &szName))
+		return Py_BuildException();
+
+	CPythonShop::Instance().BuildOfflineShop(szName);
+	return Py_BuildNone();
+}
+
 PyObject * shopGetTabCount(PyObject * poSelf, PyObject * poArgs)
 {
 	return Py_BuildValue("i", CPythonShop::instance().GetTabCount());
@@ -424,6 +452,7 @@ void initshop()
 		{ "DelPrivateShopItemStock",	shopDelPrivateShopItemStock,	METH_VARARGS },
 		{ "GetPrivateShopItemPrice",	shopGetPrivateShopItemPrice,	METH_VARARGS },
 		{ "BuildPrivateShop",			shopBuildPrivateShop,			METH_VARARGS },
+		{ "BuildOfflineShop",			shopBuildOfflineShop,			METH_VARARGS },
 		{ NULL,							NULL,							NULL },
 	};
 	PyObject * poModule = Py_InitModule("shop", s_methods);

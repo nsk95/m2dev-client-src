@@ -107,6 +107,8 @@ class CPythonItem : public CSingleton<CPythonItem>
 
 		bool	GetCloseItem(const TPixelPosition & c_rPixelPosition, DWORD* pdwItemID, DWORD dwDistance=300);
 		bool	GetCloseMoney(const TPixelPosition & c_rPixelPosition, DWORD* dwItemID, DWORD dwDistance=300);
+		// ELEMENTIA: enumerate every ground item within range (for filtered auto-pickup)
+		void	GetCloseItemList(const TPixelPosition & c_rPixelPosition, DWORD dwDistance, std::vector<DWORD> & rvecItemID);
 
 		DWORD	GetVirtualNumberOfGroundItem(DWORD dwVID);
 

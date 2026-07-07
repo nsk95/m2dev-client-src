@@ -118,6 +118,31 @@ PyObject * playerPickCloseItem(PyObject* poSelf, PyObject* poArgs)
 	return Py_BuildNone();
 }
 
+// ELEMENTIA: instant + filtered auto-pickup bindings
+PyObject * playerSetInstantPickup(PyObject* poSelf, PyObject* poArgs)
+{
+	int iEnable;
+	if (!PyTuple_GetInteger(poArgs, 0, &iEnable))
+		return Py_BuildException();
+	CPythonPlayer::Instance().SetInstantPickup(iEnable ? true : false);
+	return Py_BuildNone();
+}
+
+PyObject * playerAddPickupFilter(PyObject* poSelf, PyObject* poArgs)
+{
+	int iVnum;
+	if (!PyTuple_GetInteger(poArgs, 0, &iVnum))
+		return Py_BuildException();
+	CPythonPlayer::Instance().AddPickupFilterVnum((DWORD)iVnum);
+	return Py_BuildNone();
+}
+
+PyObject * playerClearPickupFilter(PyObject* poSelf, PyObject* poArgs)
+{
+	CPythonPlayer::Instance().ClearPickupFilter();
+	return Py_BuildNone();
+}
+
 
 PyObject * playerSetGameWindow(PyObject* poSelf, PyObject* poArgs)
 {
@@ -1331,8 +1356,11 @@ PyObject * playerIsCostumeSlot(PyObject* poSelf, PyObject* poArgs)
 		return Py_BuildException();
 
 #ifdef ENABLE_COSTUME_SYSTEM
-	if (iSlotIndex >= c_Costume_Slot_Start)
-	if (iSlotIndex <= c_Costume_Slot_End)
+	// ELEMENTIA-COSTUME: explicit slot check. Body/Hair are contiguous (19/20) but the weapon transmog
+	// slot is at 24 (21-23 are rings/belt), so a start..end range would wrongly include ring/belt slots.
+	if (iSlotIndex == (int)c_Costume_Slot_Body ||
+		iSlotIndex == (int)c_Costume_Slot_Hair ||
+		iSlotIndex == (int)c_Costume_Slot_Weapon)
 		return Py_BuildValue("i", 1);
 #endif
 
@@ -2174,6 +2202,9 @@ void initPlayer()
 		{ "SetAutoPotionInfo",			playerSetAutoPotionInfo,			METH_VARARGS },
 
 		{ "PickCloseItem",				playerPickCloseItem,				METH_VARARGS },
+		{ "SetInstantPickup",			playerSetInstantPickup,				METH_VARARGS },	// ELEMENTIA
+		{ "AddPickupFilter",			playerAddPickupFilter,				METH_VARARGS },	// ELEMENTIA
+		{ "ClearPickupFilter",			playerClearPickupFilter,			METH_VARARGS },	// ELEMENTIA
 		{ "SetGameWindow",				playerSetGameWindow,				METH_VARARGS },
 		{ "RegisterEffect",				playerRegisterEffect,				METH_VARARGS },
 		{ "RegisterCacheEffect",		playerRegisterCacheEffect,			METH_VARARGS },

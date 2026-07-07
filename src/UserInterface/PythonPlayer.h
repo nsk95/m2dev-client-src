@@ -186,6 +186,13 @@ class CPythonPlayer : public CSingleton<CPythonPlayer>, public IAbstractPlayer
 		void	PickCloseMoney();
 		void	PickCloseItem();
 
+		// ELEMENTIA: instant + filtered auto-pickup
+		void	SetInstantPickup(bool bEnable);
+		bool	IsInstantPickup() const { return m_bInstantPickup; }
+		void	AddPickupFilterVnum(DWORD dwVnum);		// vnums added here are IGNORED by auto-pickup
+		void	ClearPickupFilter();
+		bool	__IsPickupFiltered(DWORD dwGroundItemID);
+
 		void	SetGameWindow(PyObject * ppyObject);
 
 		void	SetObserverMode(bool isEnable);
@@ -292,7 +299,7 @@ class CPythonPlayer : public CSingleton<CPythonPlayer>, public IAbstractPlayer
 		DWORD	GetItemCountByVnum(DWORD dwVnum);
 		DWORD	GetItemMetinSocket(TItemPos Cell, DWORD dwMetinSocketIndex);
 		void	GetItemAttribute(TItemPos Cell, DWORD dwAttrSlotIndex, BYTE * pbyType, short * psValue);
-		void	SendClickItemPacket(DWORD dwIID);
+		void	SendClickItemPacket(DWORD dwIID, bool bInstant = false);	// ELEMENTIA: bInstant bypasses the 500ms throttle
 
 		void	RequestAddLocalQuickSlot(DWORD dwLocalSlotIndex, DWORD dwWndType, DWORD dwWndItemPos);
 		void	RequestAddToEmptyLocalQuickSlot(DWORD dwWndType, DWORD dwWndItemPos);
@@ -663,6 +670,10 @@ class CPythonPlayer : public CSingleton<CPythonPlayer>, public IAbstractPlayer
 		DWORD					m_dwTargetVID;
 		DWORD					m_dwTargetEndTime;
 		DWORD					m_dwPlayTime;
+
+		// ELEMENTIA: instant + filtered auto-pickup state
+		bool					m_bInstantPickup = false;
+		std::set<DWORD>			m_setPickupFilterVnum;
 
 		SAutoPotionInfo			m_kAutoPotionInfo[AUTO_POTION_TYPE_NUM];
 

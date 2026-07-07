@@ -107,6 +107,7 @@ namespace CG
     // Shop / Safebox / Mall
     constexpr uint16_t SHOP               = 0x0801;
     constexpr uint16_t MYSHOP             = 0x0802;
+    constexpr uint16_t OFFLINE_SHOP       = 0x0803; // ELEMENTIA offline shop
     constexpr uint16_t SAFEBOX_CHECKIN    = 0x0820;
     constexpr uint16_t SAFEBOX_CHECKOUT   = 0x0821;
     constexpr uint16_t SAFEBOX_ITEM_MOVE  = 0x0822;
@@ -1065,6 +1066,16 @@ typedef struct SPacketCGMyShop
     char        szSign[SHOP_SIGN_MAX_LEN + 1];
     uint8_t        bCount;	// count of TShopItemTable, max 39
 } TPacketCGMyShop;
+
+// ELEMENTIA offline shop: same layout as TPacketCGMyShop, followed by
+// bCount * TShopItemTable.
+typedef struct SPacketCGOfflineShop
+{
+    uint16_t	header;
+    uint16_t	length;
+    char        szSign[SHOP_SIGN_MAX_LEN + 1];
+    uint8_t        bCount;
+} TPacketCGOfflineShop;
 
 typedef struct SPacketCGRefine
 {

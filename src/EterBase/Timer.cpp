@@ -92,8 +92,63 @@ void CTimer::SetBaseTime()
 	m_dwCurrentTime = 0;
 }
 
+// ELEMENTIA: fixed-step accumulator. Drains real elapsed time into whole ~16.67ms
+// game steps. Crash-safe: real elapsed is clamped (post alt-tab / stall) and the
+// backlog is capped so we never spiral or emit a huge single game step.
+void CTimer::SetFixedStepUnlock(bool bEnable)
+{
+	if (m_bFixedStepUnlock == bEnable)
+		return;
+
+	m_bFixedStepUnlock = bEnable;
+	m_dStepAccumMS = 0.0;
+	m_dwStepLastRealMS = 0;
+	m_bStepFrame = true;
+}
+
 void CTimer::Advance()
 {
+	if (m_bFixedStepUnlock)   // ELEMENTIA: decoupled render / fixed game step
+	{
+		const double dFixedStep = 1000.0 / 60.0;   // ~16.667ms per game tick
+
+		DWORD dwNow = ELTimer_GetMSec();
+		if (m_dwStepLastRealMS == 0)
+			m_dwStepLastRealMS = dwNow;
+
+		double dReal = double(dwNow - m_dwStepLastRealMS);
+		m_dwStepLastRealMS = dwNow;
+
+		if (dReal > 250.0)          // clamp after a long stall (crash/spiral guard)
+			dReal = 250.0;
+
+		m_dStepAccumMS += dReal;
+
+		if (m_dStepAccumMS >= dFixedStep)
+		{
+			m_dStepAccumMS -= dFixedStep;
+			if (m_dStepAccumMS > dFixedStep * 4.0)   // cap backlog
+				m_dStepAccumMS = dFixedStep * 4.0;
+
+			// keep the original 16/17ms alternating cadence for parity with vanilla
+			++m_index;
+			if (m_index == 1)
+				m_index = -1;
+
+			DWORD dwStepMS = 16 + (m_index & 1);
+			m_dwCurrentTime += dwStepMS;
+			m_fCurrentTime = m_dwCurrentTime / 1000.0f;
+			m_dwElapsedTime = dwStepMS;
+			m_bStepFrame = true;
+		}
+		else
+		{
+			m_dwElapsedTime = 0;    // render-only frame: freeze game time
+			m_bStepFrame = false;
+		}
+		return;
+	}
+
 	if (!m_bUseRealTime)
 	{
 		++m_index;
@@ -144,6 +199,11 @@ float CTimer::GetElapsedSecond()
 
 DWORD CTimer::GetElapsedMilliecond()
 {
+	// ELEMENTIA: in fixed-step-unlock mode m_dwElapsedTime is authoritative
+	// (0 on render-only frames, ~16/17ms on game-step frames).
+	if (m_bFixedStepUnlock)
+		return m_dwElapsedTime;
+
 	if (!m_bUseRealTime)
 		return 16 + (m_index & 1);
 

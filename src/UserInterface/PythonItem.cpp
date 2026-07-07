@@ -655,6 +655,23 @@ bool CPythonItem::GetCloseItem(const TPixelPosition& c_rPixelPosition, DWORD* pd
 	return true;
 }
 
+// ELEMENTIA: collect every ground item whose distance from the given position is
+// within dwDistance. Used by the filtered instant auto-pickup path.
+void CPythonItem::GetCloseItemList(const TPixelPosition& c_rPixelPosition, DWORD dwDistance, std::vector<DWORD>& rvecItemID)
+{
+	rvecItemID.clear();
+
+	TGroundItemInstanceMap::iterator i;
+	for (i = m_GroundItemInstanceMap.begin(); i != m_GroundItemInstanceMap.end(); ++i)
+	{
+		TGroundItemInstance* pInstance = i->second;
+
+		int iDist = DISTANCE_APPROX((int)c_rPixelPosition.x - (int)pInstance->v3EndPosition.x, (int)c_rPixelPosition.y - (-(int)pInstance->v3EndPosition.y));
+		if ((DWORD)iDist <= dwDistance)
+			rvecItemID.push_back(i->first);
+	}
+}
+
 BOOL CPythonItem::GetGroundItemPosition(DWORD dwVirtualID, TPixelPosition * pPosition)
 {
 	TGroundItemInstanceMap::iterator itor = m_GroundItemInstanceMap.find(dwVirtualID);

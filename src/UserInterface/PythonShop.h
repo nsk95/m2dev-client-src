@@ -54,6 +54,7 @@ class CPythonShop : public CSingleton<CPythonShop>
 		void DelPrivateShopItemStock(TItemPos ItemPos);
 		int GetPrivateShopItemPrice(TItemPos ItemPos);
 		void BuildPrivateShop(const char * c_szName);
+		void BuildOfflineShop(const char * c_szName);	// ELEMENTIA offline shop
 
 	protected:
 		BOOL	CheckSlotIndex(DWORD dwIndex);

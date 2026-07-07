@@ -103,6 +103,7 @@ class CItemData
 		{
 			COSTUME_BODY,				//0	갑옷(main look)
 			COSTUME_HAIR,				//1	헤어(탈착가능)
+			COSTUME_WEAPON,				//2	ELEMENTIA-COSTUME weapon transmog
 			COSTUME_NUM_TYPES,
 		};
 
@@ -139,6 +140,7 @@ class CItemData
 			USE_TIME_CHARGE_FIX,				// 28
 			USE_PUT_INTO_BELT_SOCKET,			// 29 벨트 소켓에 사용할 수 있는 아이템 
 			USE_PUT_INTO_RING_SOCKET,			// 30 반지 소켓에 사용할 수 있는 아이템 (유니크 반지 말고, 새로 추가된 반지 슬롯)
+			USE_MOUNT,							// 31 ELEMENTIA-MOUNT: on-use mount summon/dismount
 		};
 
 		enum EDragonSoulSubType
@@ -252,6 +254,7 @@ class CItemData
 			WEAR_RING1,			//21
 			WEAR_RING2,			//22
 			WEAR_BELT,			//23
+			WEAR_COSTUME_WEAPON,	//24 ELEMENTIA-COSTUME weapon transmog (appended; must equal server WEAR_COSTUME_WEAPON=24)
 
 			WEAR_MAX_NUM,
 		};
@@ -273,6 +276,7 @@ class CItemData
 			WEARABLE_COSTUME_BODY			= (1 << 12),
 			WEARABLE_COSTUME_HAIR			= (1 << 13),
 			WEARABLE_BELT					= (1 << 14),
+			WEARABLE_COSTUME_WEAPON			= (1 << 15),	// ELEMENTIA-COSTUME
 		};
 
 		enum EApplyTypes

@@ -206,6 +206,8 @@ class CPythonApplication : public CMSApplication, public CInputKeyboard, public 
 		float GetPitch();
 
 		void SetFPS(int iFPS);
+		void SetUnlockFPS(bool bEnable);	// ELEMENTIA: toggle decoupled render / fixed game step
+		bool IsUnlockFPS() const { return m_bUnlockFPS; }	// ELEMENTIA
 		void SetServerTime(time_t tTime);
 		time_t GetServerTime();
 		time_t GetServerTimeStamp();
@@ -359,6 +361,7 @@ class CPythonApplication : public CMSApplication, public CInputKeyboard, public 
 		D3DXVECTOR3					m_v3CenterPosition;
 
 		unsigned int				m_iFPS;
+		bool						m_bUnlockFPS;			// ELEMENTIA: FPS-unlock toggle (fixed-step accumulator)
 		float						m_fAveRenderTime;
 		DWORD						m_dwCurRenderTime;
 		DWORD						m_dwCurUpdateTime;

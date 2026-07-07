@@ -27,7 +27,7 @@ struct TPackFileHeader
 };
 struct TPackFileEntry
 {
-	char		file_name[FILENAME_MAX+1];
+	char		file_name[260+1];  // FIX: fest 260 (Windows-Client FILENAME_MAX) — Linux-FILENAME_MAX ist 4096, das wuerde das Pack-Index-Layout zerschiessen und der Windows-Client kann die Packs nicht lesen.
 	uint64_t	offset;
 	uint64_t	file_size;
 	uint64_t	compressed_size;

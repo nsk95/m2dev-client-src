@@ -2,8 +2,10 @@
 #include "PythonPlayer.h"
 #include "PythonPlayerEventHandler.h"
 #include "PythonApplication.h"
+#include "PythonItem.h"		// ELEMENTIA: filtered auto-pickup
 #include "EterLib/Camera.h"
 #include "EterBase/Timer.h"
+#include <vector>			// ELEMENTIA
 
 const int c_iFastestSendingCount = 3;
 const int c_iSlowestSendingCount = 3;
@@ -50,13 +52,61 @@ void CPythonPlayer::PickCloseItem()
 	TPixelPosition kPPosMain;
 	pkInstMain->NEW_GetPixelPosition(&kPPosMain);
 
-	DWORD dwItemID;
 	CPythonItem& rkItem=CPythonItem::Instance();
+
+	// ELEMENTIA: instant + filtered auto-pickup.
+	// When enabled, loot EVERY pickable item in range in a single keypress (instant,
+	// throttle bypassed) while honouring the client-side vnum filter. Ownership /
+	// party / antiflag checks still run inside SendClickItemPacket, so this cannot
+	// grab items that are not yours.
+	if (IsInstantPickup())
+	{
+		std::vector<DWORD> vecItemID;
+		rkItem.GetCloseItemList(kPPosMain, __GetPickableDistance(), vecItemID);
+
+		for (size_t n = 0; n < vecItemID.size(); ++n)
+		{
+			DWORD dwItemID = vecItemID[n];
+			if (__IsPickupFiltered(dwItemID))
+				continue;
+			SendClickItemPacket(dwItemID, true /*bInstant*/);
+		}
+		return;
+	}
+
+	DWORD dwItemID;
 	if (!rkItem.GetCloseItem(kPPosMain, &dwItemID, __GetPickableDistance()))
 		return;
 
 	SendClickItemPacket(dwItemID);
 }
+
+// ELEMENTIA: instant + filtered auto-pickup helpers -----------------------------
+void CPythonPlayer::SetInstantPickup(bool bEnable)
+{
+	m_bInstantPickup = bEnable;
+}
+
+void CPythonPlayer::AddPickupFilterVnum(DWORD dwVnum)
+{
+	m_setPickupFilterVnum.insert(dwVnum);
+}
+
+void CPythonPlayer::ClearPickupFilter()
+{
+	m_setPickupFilterVnum.clear();
+}
+
+// Returns true when the ground item's base vnum is on the ignore list.
+bool CPythonPlayer::__IsPickupFiltered(DWORD dwGroundItemID)
+{
+	if (m_setPickupFilterVnum.empty())
+		return false;
+
+	DWORD dwVnum = CPythonItem::Instance().GetVirtualNumberOfGroundItem(dwGroundItemID);
+	return m_setPickupFilterVnum.find(dwVnum) != m_setPickupFilterVnum.end();
+}
+// ------------------------------------------------------------------------------
 
 bool CPythonPlayer::__IsTarget()
 {

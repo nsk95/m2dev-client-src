@@ -19,6 +19,9 @@ extern void GrannyDestroySharedDeformBuffer();
 float MIN_FOG = 2400.0f;
 double g_specularSpd=0.007f;
 
+// ELEMENTIA: tasteful raised ceiling for auto view + shadow render distance (was 25600).
+static const float ELEMENTIA_MAX_VIEW_DISTANCE = 32000.0f;
+
 CPythonApplication * CPythonApplication::ms_pInstance;
 
 float c_fDefaultCameraRotateSpeed = 1.5f;
@@ -60,6 +63,7 @@ m_IsMovingMainWindow(false)
 
 	m_iPort = 0;
 	m_iFPS = 60;
+	m_bUnlockFPS = false;	// ELEMENTIA: default off -> original 60fps locked behavior preserved
 
 	m_isActivateWnd = false;
 	m_isMinimizedWnd = true;
@@ -382,14 +386,19 @@ bool CPythonApplication::Process()
 
 	s_bFrameSkip = false;
 
-	if (dwCurrentTime > s_uiNextFrameTime)
+	// ELEMENTIA: the vanilla frame-skip / time-adjust scheduler assumes the game step
+	// advances every loop. Under fixed-step unlock the game step is decoupled (elapsed
+	// is 0 on render-only frames), so this scheduler must be bypassed - otherwise it
+	// would false-trigger and yank the game clock forward. Render pacing is handled
+	// separately at the bottom of Process().
+	if (!m_bUnlockFPS && dwCurrentTime > s_uiNextFrameTime)
 	{
 		int dt = dwCurrentTime - s_uiNextFrameTime;
-		int nAdjustTime = ((float)dt / (float)uiFrameTime) * uiFrameTime; 
+		int nAdjustTime = ((float)dt / (float)uiFrameTime) * uiFrameTime;
 
 		if ( dt >= 500 )
 		{
-			s_uiNextFrameTime += nAdjustTime; 
+			s_uiNextFrameTime += nAdjustTime;
 			printf("FrameSkip º¸Á¤ %d\n",nAdjustTime);
 			CTimer::Instance().Adjust(nAdjustTime);
 		}
@@ -515,7 +524,11 @@ bool CPythonApplication::Process()
 						s_fAveRenderTime=(s_fAveRenderTime*(100.0f-fRatio)+std::max(16.0f, (float)m_dwCurRenderTime)*fRatio)/100.0f;
 
 
-						float fFar=25600.0f;
+						// ELEMENTIA: raise the auto view + shadow render distance ceiling.
+						// Vanilla caps the auto far-clip at 25600; a tasteful bump gives a
+						// wider view/shadow radius while the adaptive scaler above still
+						// backs off on slow frames so it stays performance-safe.
+						float fFar = ELEMENTIA_MAX_VIEW_DISTANCE;
 						float fNear=MIN_FOG;
 						double dbAvePow=double(1000.0f/s_fAveRenderTime);
 						double dbMaxPow=60.0;
@@ -531,7 +544,8 @@ bool CPythonApplication::Process()
 				else
 				{
 					// 10000 Æú¸®°ï º¸´Ù ÀûÀ»¶§´Â °¡Àå ¸Ö¸® º¸ÀÌ°Ô ÇÑ´Ù
-					m_pyBackground.SetViewDistanceSet(0, 25600.0f);
+					// ELEMENTIA: raised ceiling (was 25600) for a wider view/shadow radius.
+					m_pyBackground.SetViewDistanceSet(0, ELEMENTIA_MAX_VIEW_DISTANCE);
 				}
 
 				++s_dwRenderFrameCount;
@@ -541,11 +555,31 @@ bool CPythonApplication::Process()
 
 	int rest = s_uiNextFrameTime - ELTimer_GetMSec();
 
-	if (rest > 0 && !bCurrentLateUpdate )
+	if (m_bUnlockFPS)
+	{
+		// ELEMENTIA: render-rate cap decoupled from the fixed game step.
+		// m_iFPS == 0 -> unlimited (no sleep). Otherwise pace the render loop to
+		// the requested FPS using a real-time schedule (resynced after a stall).
+		if (m_iFPS > 0)
+		{
+			static DWORD s_dwNextRenderMS = ELTimer_GetMSec();
+			DWORD dwFrameMS = 1000 / std::max<unsigned int>(1u, m_iFPS);
+			s_dwNextRenderMS += dwFrameMS;
+
+			int rest2 = int(s_dwNextRenderMS) - int(ELTimer_GetMSec());
+			if (rest2 > int(dwFrameMS))                       // never over-sleep a frame
+				rest2 = int(dwFrameMS);
+			if (rest2 < -int(dwFrameMS * 8))                  // resync after a stall
+				s_dwNextRenderMS = ELTimer_GetMSec();
+			if (rest2 > 0)
+				Sleep(rest2);
+		}
+	}
+	else if (rest > 0 && !bCurrentLateUpdate )
 	{
 		s_uiLoad -= rest;	// ½® ½Ã°£Àº ·Îµå¿¡¼­ »«´Ù..
 		Sleep(rest);
-	}	
+	}
 
 	++s_dwUpdateFrameCount;
 
@@ -1024,6 +1058,14 @@ float CPythonApplication::GetGlobalElapsedTime()
 void CPythonApplication::SetFPS(int iFPS)
 {
 	m_iFPS = iFPS;
+}
+
+// ELEMENTIA: enable/disable the fixed-step FPS unlock. When enabled, CTimer drives
+// the game logic on a fixed ~60Hz step while Process() renders at m_iFPS (0 = unlimited).
+void CPythonApplication::SetUnlockFPS(bool bEnable)
+{
+	m_bUnlockFPS = bEnable;
+	CTimer::Instance().SetFixedStepUnlock(bEnable);
 }
 
 int CPythonApplication::GetWidth()

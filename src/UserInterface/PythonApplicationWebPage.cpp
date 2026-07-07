@@ -28,7 +28,7 @@ void CPythonApplication::ShowWebPage(const char* c_szURL, const RECT& c_rcWebPag
 	SetCursorMode(CURSOR_MODE_HARDWARE);
 
 	std::filesystem::path tempPath = std::filesystem::temp_directory_path();
-	tempPath /= "Metin2";
+	tempPath /= "ELEMENTIA"; // ELEMENTIA: rebrand temp-cache folder (was "Metin2")
 	tempPath /= "WebCache";
 
 	auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();

@@ -263,6 +263,7 @@ class CPythonNetworkStream : public CNetworkStream, public CSingleton<CPythonNet
 
 		// Private Shop
 		bool SendBuildPrivateShopPacket(const char * c_szName, const std::vector<TShopItemTable> & c_rSellingItemStock);
+		bool SendBuildOfflineShopPacket(const char * c_szName, const std::vector<TShopItemTable> & c_rSellingItemStock); // ELEMENTIA offline shop
 
 		// Refine
 		bool SendRefinePacket(BYTE byPos, BYTE byType);

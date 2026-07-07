@@ -1207,7 +1207,7 @@ DWORD CPythonPlayer::GetPlayTime()
 	return m_dwPlayTime;
 }
 
-void CPythonPlayer::SendClickItemPacket(DWORD dwIID)
+void CPythonPlayer::SendClickItemPacket(DWORD dwIID, bool bInstant)
 {
 	if (IsObserverMode())
 		return;
@@ -1216,9 +1216,11 @@ void CPythonPlayer::SendClickItemPacket(DWORD dwIID)
 
 	DWORD dwCurTime=ELTimer_GetMSec();
 
-	if (dwCurTime >= s_dwNextTCPTime)
+	// ELEMENTIA: instant pickup bypasses the vanilla 500ms click throttle.
+	if (bInstant || dwCurTime >= s_dwNextTCPTime)
 	{
-		s_dwNextTCPTime=dwCurTime + 500;
+		if (!bInstant)
+			s_dwNextTCPTime=dwCurTime + 500;
 
 		const char * c_szOwnerName;
 		if (!CPythonItem::Instance().GetOwnership(dwIID, &c_szOwnerName))

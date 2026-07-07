@@ -2197,7 +2197,30 @@ bool CPythonNetworkStream::RecvTargetPacket()
 			if (pInstTarget->IsPC() || pInstTarget->IsBuilding())
 				PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_GAME], "CloseTargetBoardIfDifferent", Py_BuildValue("(i)", TargetPacket.dwVID));
 			else if (pInstPlayer->CanViewTargetHP(*pInstTarget))
-				PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_GAME], "SetHPTargetBoard", Py_BuildValue("(ii)", TargetPacket.dwVID, TargetPacket.bHPPercent));
+			{
+				// ELEMENTIA: boss-HP >21M overflow fix.
+				// The server derives bHPPercent as (HP*100/MaxHP) in 32-bit; for MaxHP
+				// above ~21.47M (INT_MAX/100) that multiply overflows and the byte comes
+				// back wrapped/garbage (>100 or negative), so the target bar shows a bogus
+				// percentage. Two guards: (1) when the target is the main player we can
+				// recompute exactly from our own status using 64-bit math; (2) always clamp
+				// the value into [0,100] so a corrupt server byte can never corrupt the bar.
+				int iHPPercent = TargetPacket.bHPPercent;
+
+				bool bSelfTarget = (pInstTarget == pInstPlayer);
+				if (bSelfTarget)
+				{
+					long long llHP  = (long long)CPythonPlayer::Instance().GetStatus(POINT_HP);
+					long long llMax = (long long)CPythonPlayer::Instance().GetStatus(POINT_MAX_HP);
+					if (llMax > 0)
+						iHPPercent = (int)((llHP * 100LL) / llMax);
+				}
+
+				if (iHPPercent < 0)   iHPPercent = 0;
+				if (iHPPercent > 100) iHPPercent = 100;
+
+				PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_GAME], "SetHPTargetBoard", Py_BuildValue("(ii)", TargetPacket.dwVID, iHPPercent));
+			}
 			else
 				PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_GAME], "CloseTargetBoard", Py_BuildValue("()"));
 
@@ -3776,6 +3799,28 @@ bool CPythonNetworkStream::SendBuildPrivateShopPacket(const char * c_szName, con
 {
 	TPacketCGMyShop packet;
 	packet.header = CG::MYSHOP;
+	packet.length = sizeof(packet) + sizeof(TShopItemTable) * c_rSellingItemStock.size();
+	strncpy(packet.szSign, c_szName, SHOP_SIGN_MAX_LEN);
+	packet.bCount = static_cast<unsigned char>(c_rSellingItemStock.size());
+	if (!Send(sizeof(packet), &packet))
+		return false;
+
+	for (std::vector<TShopItemTable>::const_iterator itor = c_rSellingItemStock.begin(); itor < c_rSellingItemStock.end(); ++itor)
+	{
+		const TShopItemTable & c_rItem = *itor;
+		if (!Send(sizeof(c_rItem), &c_rItem))
+			return false;
+	}
+
+	return true;
+}
+
+// ELEMENTIA offline shop: identical to SendBuildPrivateShopPacket but with the
+// CG::OFFLINE_SHOP header so the server opens a persistent offline stall.
+bool CPythonNetworkStream::SendBuildOfflineShopPacket(const char * c_szName, const std::vector<TShopItemTable> & c_rSellingItemStock)
+{
+	TPacketCGOfflineShop packet;
+	packet.header = CG::OFFLINE_SHOP;
 	packet.length = sizeof(packet) + sizeof(TShopItemTable) * c_rSellingItemStock.size();
 	strncpy(packet.szSign, c_szName, SHOP_SIGN_MAX_LEN);
 	packet.bCount = static_cast<unsigned char>(c_rSellingItemStock.size());
