@@ -2,6 +2,7 @@
 #include "PythonNetworkStream.h"
 #include "AccountConnector.h"
 #include "PythonGuild.h"
+#include "ElementiaHandoff.h"	// ELEMENTIA-HANDOFF
 
 #include "AbstractPlayer.h"
 
@@ -396,6 +397,33 @@ PyObject* netDirectEnter(PyObject* poSelf, PyObject* poArgs)
 
 	CPythonNetworkStream& rkNetStream=CPythonNetworkStream::Instance();
 	rkNetStream.ConnectGameServer(nChrSlot);
+	return Py_BuildNone();
+}
+
+// ELEMENTIA-HANDOFF: query / drive the Electron session handoff read at boot.
+// The intro/login Python does:  if net.IsHandoffPending(): net.DirectEnterFromHandoff()
+// which skips the login + char-select screens; otherwise the flow is unchanged.
+PyObject* netIsHandoffPending(PyObject* poSelf, PyObject* poArgs)
+{
+	return Py_BuildValue("i", Elementia_IsHandoffPending() ? 1 : 0);
+}
+
+PyObject* netGetHandoffInfo(PyObject* poSelf, PyObject* poArgs)
+{
+	if (!Elementia_IsHandoffPending())
+		return Py_BuildNone();
+	const SElementiaHandoff& ho = Elementia_GetHandoff();
+	return Py_BuildValue("(sisii)", ho.name.c_str(), (int)ho.key,
+						 ho.host.c_str(), (int)ho.port, (int)ho.slot);
+}
+
+PyObject* netDirectEnterFromHandoff(PyObject* poSelf, PyObject* poArgs)
+{
+	if (!Elementia_IsHandoffPending())
+		return Py_BuildNone();
+	const SElementiaHandoff& ho = Elementia_GetHandoff();
+	CPythonNetworkStream& rkNetStream = CPythonNetworkStream::Instance();
+	rkNetStream.DirectEnterFromHandoff(ho.name.c_str(), ho.key, ho.host.c_str(), ho.port, ho.slot);
 	return Py_BuildNone();
 }
 
@@ -1670,6 +1698,10 @@ void initnet()
 		{ "SetTCPRecvBufferSize",				netSetTCPRecvBufferSize,				METH_VARARGS },
 		{ "SetTCPSendBufferSize",				netSetTCPSendBufferSize,				METH_VARARGS },
 		{ "DirectEnter",						netDirectEnter,							METH_VARARGS },
+		// ELEMENTIA-HANDOFF
+		{ "IsHandoffPending",					netIsHandoffPending,					METH_VARARGS },
+		{ "GetHandoffInfo",						netGetHandoffInfo,						METH_VARARGS },
+		{ "DirectEnterFromHandoff",				netDirectEnterFromHandoff,				METH_VARARGS },
 
 		{ "LogOutGame",							netLogOutGame,							METH_VARARGS },
 		{ "ExitGame",							netExitGame,							METH_VARARGS },

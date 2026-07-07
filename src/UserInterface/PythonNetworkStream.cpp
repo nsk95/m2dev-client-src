@@ -299,8 +299,25 @@ void CPythonNetworkStream::ConnectGameServer(UINT iChrSlot)
 
 	__DirectEnterMode_Set(iChrSlot);
 
-	TSimplePlayerInformation&	rkSimplePlayerInfo=m_akSimplePlayerInfo[iChrSlot];	
+	TSimplePlayerInformation&	rkSimplePlayerInfo=m_akSimplePlayerInfo[iChrSlot];
 	CNetworkStream::Connect((DWORD)rkSimplePlayerInfo.lAddr, rkSimplePlayerInfo.wPort);
+}
+
+// ELEMENTIA-HANDOFF: enter directly from an Electron-minted session handoff.
+// Mirrors ConnectGameServer() but seeds the game-server address from the handoff,
+// because m_akSimplePlayerInfo is not populated on a fresh boot (this process did
+// no login/char-list). Everything after Connect() reuses the existing DirectEnter
+// machinery: HandShake -> GC_PHASE(LOGIN) -> SetLoginPhase() sees DirectEnterMode
+// + m_dwLoginKey!=0 and sends CG_LOGIN2 -> GC_LOGIN_SUCCESS3/4 auto-selects the
+// slot -> GC_PHASE(SELECT) goes straight to loading + SendEnterGame().
+void CPythonNetworkStream::DirectEnterFromHandoff(const char* name, DWORD loginKey,
+												  const char* host, WORD port, BYTE slot)
+{
+	SetLoginInfo(name, "");					// LOGIN2 needs only the name (+ key)
+	SetLoginKey(loginKey);					// u32 minted by the Electron auth leg
+	m_dwSelectedCharacterIndex = slot;
+	__DirectEnterMode_Set(slot);			// sticky auto-select for this slot
+	CNetworkStream::Connect(host, (int)port);	// connect to the char's game server
 }
 
 void CPythonNetworkStream::SetLoginInfo(const char* c_szID, const char* c_szPassword)

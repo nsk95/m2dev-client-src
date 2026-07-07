@@ -4,6 +4,7 @@
 #include "PythonExceptionSender.h"
 #include "resource.h"
 #include "Version.h"
+#include "ElementiaHandoff.h"	// ELEMENTIA-HANDOFF
 
 #ifdef _DEBUG
 #include <crtdbg.h>
@@ -247,6 +248,15 @@ static bool Main(HINSTANCE hInstance, LPSTR lpCmdLine)
 		LogBox("sodium_init() failed");
 		return false;
 	}
+
+	// ---- ELEMENTIA-HANDOFF -------------------------------------------------
+	// If Electron launched us with --handoff-pipe/--handoff-nonce, consume the
+	// one-shot session handoff now (before the Python UI boots). The parsed
+	// { name, key, host, port, slot } is stashed and later driven into the exe's
+	// existing DirectEnter path once the Python intro checks net.IsHandoffPending().
+	// With no handoff args this is a cheap no-op: a normal launch is unaffected.
+	Elementia_InitHandoffFromCommandLine(lpCmdLine);
+	// ------------------------------------------------------------------------
 
 	if (!CFontManager::Instance().Initialize())
 	{

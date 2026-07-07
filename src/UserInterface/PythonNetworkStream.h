@@ -136,6 +136,11 @@ class CPythonNetworkStream : public CNetworkStream, public CSingleton<CPythonNet
 		void ConnectLoginServer(const char* c_szAddr, UINT uPort);
 		void ConnectGameServer(UINT iChrSlot);
 
+		// ELEMENTIA-HANDOFF: enter directly from an Electron-minted session handoff
+		// (seeds the target address from the handoff instead of m_akSimplePlayerInfo,
+		// which is empty on a fresh boot). Reuses the existing DirectEnter path.
+		void DirectEnterFromHandoff(const char* name, DWORD loginKey, const char* host, WORD port, BYTE slot);
+
 		void SetLoginInfo(const char* c_szID, const char* c_szPassword);
 		void SetLoginKey(DWORD dwLoginKey);
 		void ClearLoginInfo( void );
