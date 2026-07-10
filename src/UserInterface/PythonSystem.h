@@ -78,6 +78,8 @@ class CPythonSystem : public CSingleton<CPythonSystem>
 			bool			bAlwaysShowName;
 			bool			bShowDamage;
 			bool			bShowSalesText;
+			bool			bWindowResize;	// ELEMENTIA-RESIZE: resizable window frame (default off = vanilla)
+			float			fUIScale;		// ELEMENTIA-UISCALE: global 2D-UI scale (default 1.0 = vanilla)
 		} TConfig;
 
 	public:
@@ -115,6 +117,8 @@ class CPythonSystem : public CSingleton<CPythonSystem>
 		bool							IsShowSalesText();
 		bool							IsUseDefaultIME();
 		bool							IsNoSoundCard();
+		bool							IsWindowResizeEnabled();	// ELEMENTIA-RESIZE
+		float							GetUIScale();				// ELEMENTIA-UISCALE
 		bool							IsAutoTiling();
 		bool							IsSoftwareTiling();
 		void							SetSoftwareTiling(bool isEnable);

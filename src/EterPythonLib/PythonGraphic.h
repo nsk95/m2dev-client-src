@@ -26,6 +26,11 @@ class CPythonGraphic : public CScreen, public CSingleton<CPythonGraphic>
 
 		void SetCursorPosition(int x, int y);
 
+		// ELEMENTIA-UISCALE: like CScreen::ProjectPosition, but returns UI-space
+		// (virtual) coordinates that match the scaled interface ortho projection.
+		void ProjectPositionUI(float x, float y, float z, float * pfX, float * pfY);
+		void ProjectPositionUI(float x, float y, float z, float * pfX, float * pfY, float * pfZ);
+
 		void SetOmniLight();
 
 		void SetViewport(float fx, float fy, float fWidth, float fHeight);

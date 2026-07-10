@@ -318,6 +318,20 @@ void CPythonSystem::SetDefaultConfig()
 	m_Config.bAlwaysShowName	= DEFAULT_VALUE_ALWAYS_SHOW_NAME;
 	m_Config.bShowDamage		= true;
 	m_Config.bShowSalesText		= true;
+	m_Config.bWindowResize		= false;	// ELEMENTIA-RESIZE: default off = vanilla fixed window
+	m_Config.fUIScale			= 1.0f;		// ELEMENTIA-UISCALE: default 1.0 = vanilla
+}
+
+// ELEMENTIA-RESIZE
+bool CPythonSystem::IsWindowResizeEnabled()
+{
+	return m_Config.bWindowResize;
+}
+
+// ELEMENTIA-UISCALE
+float CPythonSystem::GetUIScale()
+{
+	return m_Config.fUIScale;
 }
 
 bool CPythonSystem::IsWindowed()
@@ -462,6 +476,18 @@ bool CPythonSystem::LoadConfig()
 			m_Config.bShowDamage = atoi(value) == 1 ? true : false;
 		else if (!stricmp(command, "SHOW_SALESTEXT"))
 			m_Config.bShowSalesText = atoi(value) == 1 ? true : false;
+		// ELEMENTIA-RESIZE: opt-in resizable window frame (0/1)
+		else if (!stricmp(command, "WINDOW_RESIZE"))
+			m_Config.bWindowResize = atoi(value) == 1 ? true : false;
+		// ELEMENTIA-UISCALE: global 2D-UI scale factor (e.g. 1.5); clamped to [0.5, 4.0]
+		else if (!stricmp(command, "UI_SCALE"))
+		{
+			float fScale = float(atof(value));
+			// NaN-safe clamp: negated range test also rejects NaN (atof("nan") → NaN).
+			if (!(fScale >= 0.5f && fScale <= 4.0f))
+				fScale = 1.0f;
+			m_Config.fUIScale = fScale;
+		}
 	}
 
 	if (m_Config.bWindowed)
@@ -548,6 +574,13 @@ bool CPythonSystem::SaveConfig()
 		fprintf(fp, "SHOW_DAMAGE		%d\n", m_Config.bShowDamage);
 	if (m_Config.bShowSalesText == 0)
 		fprintf(fp, "SHOW_SALESTEXT		%d\n", m_Config.bShowSalesText);
+
+	// ELEMENTIA-RESIZE / ELEMENTIA-UISCALE: only persist when they differ from
+	// the vanilla defaults so untouched configs stay byte-compatible.
+	if (m_Config.bWindowResize)
+		fprintf(fp, "WINDOW_RESIZE		%d\n", m_Config.bWindowResize ? 1 : 0);
+	if (m_Config.fUIScale < 0.999f || m_Config.fUIScale > 1.001f)
+		fprintf(fp, "UI_SCALE			%.3f\n", m_Config.fUIScale);
 
 	fprintf(fp, "USE_DEFAULT_IME		%d\n", m_Config.bUseDefaultIME);
 	fprintf(fp, "SOFTWARE_TILING		%d\n", m_Config.bSoftwareTiling);

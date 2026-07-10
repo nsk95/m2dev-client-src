@@ -57,7 +57,8 @@ PyObject * textTailGetPosition(PyObject * poSelf, PyObject * poArgs)
 		if (pkInstMain)
 		{
 			const D3DXVECTOR3 & c_rv3Position = pkInstMain->GetGraphicThingInstanceRef().GetPosition();
-			CPythonGraphic::Instance().ProjectPosition(c_rv3Position.x, c_rv3Position.y, c_rv3Position.z, &x, &y);	
+			// ELEMENTIA-UISCALE: Python consumes this for UI placement -> UI space.
+			CPythonGraphic::Instance().ProjectPositionUI(c_rv3Position.x, c_rv3Position.y, c_rv3Position.z, &x, &y);
 		}
 	}	
 

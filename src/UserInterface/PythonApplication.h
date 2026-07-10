@@ -309,6 +309,10 @@ class CPythonApplication : public CMSApplication, public CInputKeyboard, public 
 		void __SetFullScreenWindow(HWND hWnd, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP);
 		void __MinimizeFullScreenWindow(HWND hWnd, DWORD dwWidth, DWORD dwHeight);
 
+		// ELEMENTIA-RESIZE: apply a changed client size to the D3D9Ex backbuffer
+		// and propagate it to the UI (window manager resolution / screen size).
+		void __OnWindowSizeChanged();
+
 
 	protected:
 		CTimer m_timer;
@@ -433,6 +437,7 @@ class CPythonApplication : public CMSApplication, public CInputKeyboard, public 
 		static CPythonApplication*	ms_pInstance;
 
 		bool						m_isMinimizedWnd;
+		bool						m_isWindowSizing;		// ELEMENTIA-RESIZE: inside WM_ENTERSIZEMOVE/WM_EXITSIZEMOVE modal loop
 		bool						m_isActivateWnd;
 		BOOL						m_isWindowFullScreenEnable;
 

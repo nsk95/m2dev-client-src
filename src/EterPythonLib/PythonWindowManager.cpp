@@ -1,4 +1,5 @@
 #include "StdAfx.h"
+#include "EterLib/GrpBase.h"	// ELEMENTIA-UISCALE: CGraphicBase::GetUIScale()
 #include "PythonWindow.h"
 #include "PythonSlotWindow.h"
 #include "PythonGridSlotWindow.h"
@@ -700,6 +701,20 @@ namespace UI
 
 	void CWindowManager::SetScreenSize(long lWidth, long lHeight)
 	{
+		// ELEMENTIA-UISCALE: the caller (Python root / resize handler) passes the
+		// *physical* pixel size; the window manager works in virtual UI units
+		// (physical / UI scale). This keeps mouse mapping consistent:
+		//   SetMousePosition: logical = m_lWidth * x_physical / m_iHres
+		//                             = (physical/scale) * x / physical = x / scale
+		// which matches the scaled interface ortho projection exactly.
+		// At UI scale 1.0 this is a no-op (vanilla behaviour).
+		const float fUIScale = CGraphicBase::GetUIScale();
+		if (fUIScale != 1.0f)
+		{
+			lWidth  = long(float(lWidth)  / fUIScale);
+			lHeight = long(float(lHeight) / fUIScale);
+		}
+
 		m_lWidth	= lWidth;
 		m_lHeight	= lHeight;
 

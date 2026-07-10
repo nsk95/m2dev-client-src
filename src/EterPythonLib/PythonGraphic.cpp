@@ -26,8 +26,14 @@ void CPythonGraphic::SetInterfaceRenderState()
  	STATEMANAGER.SetTransform(D3DTS_VIEW, &ms_matIdentity);
 	STATEMANAGER.SetTransform(D3DTS_WORLD, &ms_matIdentity);
 
-	STATEMANAGER.SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_NONE);
-	STATEMANAGER.SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_NONE);
+	// ELEMENTIA-UISCALE: with an active UI scale the interface is magnified on
+	// screen; point sampling (D3DTEXF_NONE) would look blocky, so switch to
+	// bilinear filtering in that case. Scale 1.0 keeps the vanilla pixel-exact
+	// point sampling.
+	const bool bUIScaled = (GetUIScale() != 1.0f);
+	const DWORD dwUIFilter = bUIScaled ? D3DTEXF_LINEAR : D3DTEXF_NONE;
+	STATEMANAGER.SetSamplerState(0, D3DSAMP_MINFILTER, dwUIFilter);
+	STATEMANAGER.SetSamplerState(0, D3DSAMP_MAGFILTER, dwUIFilter);
 	STATEMANAGER.SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
 
 	STATEMANAGER.SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
@@ -36,7 +42,11 @@ void CPythonGraphic::SetInterfaceRenderState()
 	STATEMANAGER.SetRenderState(D3DRS_MULTISAMPLEANTIALIAS, FALSE);
 
 	CPythonGraphic::Instance().SetBlendOperation();
-	CPythonGraphic::Instance().SetOrtho2D(ms_iWidth, ms_iHeight, GetOrthoDepth());
+	// ELEMENTIA-UISCALE: the 2D ortho projection covers the *virtual* UI size
+	// (backbuffer / scale). UI elements keep their fixed pixel coordinates and
+	// are magnified by the projection; at scale 1.0 this is exactly the vanilla
+	// SetOrtho2D(ms_iWidth, ms_iHeight, ...).
+	CPythonGraphic::Instance().SetOrtho2D(GetUIVirtualWidth(), GetUIVirtualHeight(), GetOrthoDepth());
 
 	STATEMANAGER.SetRenderState(D3DRS_LIGHTING, FALSE);
 }
@@ -54,7 +64,35 @@ void CPythonGraphic::SetGameRenderState()
 
 void CPythonGraphic::SetCursorPosition(int x, int y)
 {
-	CScreen::SetCursorPosition(x, y, ms_iWidth, ms_iHeight);
+	// ELEMENTIA-UISCALE: the mouse coordinates handed in here are UI-space
+	// (virtual) coordinates coming from CWindowManager. Build the picking ray
+	// against the matching virtual resolution so the screen-fraction - and
+	// therefore the 3D pick ray - is identical to the physical one.
+	// At UI scale 1.0 this is exactly the vanilla (x, y, ms_iWidth, ms_iHeight).
+	CScreen::SetCursorPosition(x, y, int(GetUIVirtualWidth()), int(GetUIVirtualHeight()));
+}
+
+// ELEMENTIA-UISCALE: project a 3D world position into *UI space* (virtual
+// pixels). ProjectPosition() returns physical backbuffer pixels via the D3D
+// viewport; everything that feeds those coordinates into the 2D interface
+// (text tails, target marks, Python overlays) must divide by the UI scale so
+// they land correctly under the scaled interface ortho projection.
+void CPythonGraphic::ProjectPositionUI(float x, float y, float z, float * pfX, float * pfY)
+{
+	ProjectPosition(x, y, z, pfX, pfY);
+
+	const float fScale = GetUIScale();
+	*pfX /= fScale;
+	*pfY /= fScale;
+}
+
+void CPythonGraphic::ProjectPositionUI(float x, float y, float z, float * pfX, float * pfY, float * pfZ)
+{
+	ProjectPosition(x, y, z, pfX, pfY, pfZ);
+
+	const float fScale = GetUIScale();
+	*pfX /= fScale;
+	*pfY /= fScale;
 }
 
 void CPythonGraphic::SetOmniLight()

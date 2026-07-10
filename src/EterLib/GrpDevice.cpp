@@ -119,6 +119,11 @@ bool CGraphicDevice::ResizeBackBuffer(UINT uWidth, UINT uHeight)
 	if (!ms_lpd3dDevice)
 		return false;
 
+	// ELEMENTIA-RESIZE: a minimized/degenerate client rect must never produce a
+	// 0x0 backbuffer (Reset would fail / D3D would misbehave). Just skip.
+	if (uWidth == 0 || uHeight == 0)
+		return false;
+
 	D3DPRESENT_PARAMETERS& rkD3DPP=ms_d3dPresentParameter;
 	if (rkD3DPP.Windowed)
 	{
@@ -129,6 +134,10 @@ bool CGraphicDevice::ResizeBackBuffer(UINT uWidth, UINT uHeight)
 
 			IDirect3DDevice9Ex& rkD3DDev=*ms_lpd3dDevice;
 
+			// NOTE: this is a Direct3D9Ex device, so Reset() succeeds without
+			// releasing D3DPOOL_DEFAULT resources (the device is never "lost"
+			// in the D3D9 sense). Render-target *contents* become undefined,
+			// which is fine - everything is redrawn each frame.
 			HRESULT hr=rkD3DDev.Reset(&rkD3DPP);
 			if (FAILED(hr))
 			{
@@ -136,6 +145,23 @@ bool CGraphicDevice::ResizeBackBuffer(UINT uWidth, UINT uHeight)
 			}
 
 			STATEMANAGER.SetDefaultState();
+
+			// ELEMENTIA-RESIZE: propagate the new backbuffer size to the
+			// cached device metrics so projection helpers (SetInterfaceRenderState
+			// ortho, ProjectPosition via ms_Viewport, picking) match the new size.
+			ms_iWidth  = int(uWidth);
+			ms_iHeight = int(uHeight);
+			ms_lpd3dDevice->GetViewport(&ms_Viewport);
+			ms_matScreen2._11 = (float) ms_iWidth / 2;
+			ms_matScreen2._22 = (float) ms_iHeight / 2;
+
+			// ELEMENTIA-RESIZE: keep the saved pre-browser-mode present params in
+			// sync, otherwise DisableWebBrowserMode() would restore a stale size.
+			if (g_isBrowserMode)
+			{
+				g_kD3DPP.BackBufferWidth  = uWidth;
+				g_kD3DPP.BackBufferHeight = uHeight;
+			}
 		}
 	}
 

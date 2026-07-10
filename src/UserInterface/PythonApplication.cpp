@@ -67,6 +67,7 @@ m_IsMovingMainWindow(false)
 
 	m_isActivateWnd = false;
 	m_isMinimizedWnd = true;
+	m_isWindowSizing = false;	// ELEMENTIA-RESIZE
 
 	m_fRotationSpeed = 0.0f;
 	m_fPitchSpeed = 0.0f;
@@ -223,7 +224,14 @@ void CPythonApplication::UpdateGame()
 	POINT ptMouse;
 	GetMousePosition(&ptMouse);
 
-	CGraphicTextInstance::Hyperlink_UpdateMousePos(ptMouse.x, ptMouse.y);
+	// ELEMENTIA-UISCALE: hyperlink rectangles live in UI (virtual) coordinates,
+	// so hit-test them with the window manager's UI-space mouse position instead
+	// of the raw client-pixel position. Identical at UI scale 1.0.
+	{
+		long lUIMouseX, lUIMouseY;
+		m_kWndMgr.GetMousePosition(lUIMouseX, lUIMouseY);
+		CGraphicTextInstance::Hyperlink_UpdateMousePos(lUIMouseX, lUIMouseY);
+	}
 
 
 	//!@# Alt+Tab Áß SetTransfor ¿¡¼­ Æ¨±è Çö»ó ÇØ°áÀ» À§ÇØ - [levites]
@@ -810,7 +818,15 @@ bool LoadLocaleData(const char* localePath)
 unsigned __GetWindowMode(bool windowed)
 {
 	if (windowed)
+	{
+		// ELEMENTIA-RESIZE: opt-in resizable window (config "WINDOW_RESIZE 1").
+		// Adds a sizing border + maximize box; WM_SIZE/WM_EXITSIZEMOVE handle the
+		// D3D9Ex backbuffer reset. Default off = vanilla fixed-size frame.
+		if (CPythonSystem::Instance().IsWindowResizeEnabled())
+			return WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME;
+
 		return WS_OVERLAPPED | WS_CAPTION |   WS_SYSMENU | WS_MINIMIZEBOX;
+	}
 
 	return WS_POPUP;
 }
@@ -826,6 +842,11 @@ bool CPythonApplication::Create(PyObject * poSelf, const char * c_szName, int wi
 
 	NANOBEGIN
 		Windowed = CPythonSystem::Instance().IsWindowed() ? 1 : 0;
+
+	// ELEMENTIA-UISCALE: publish the configured UI scale before any UI/graphics
+	// object is created, so the interface ortho projection, the window manager
+	// screen size and the projection helpers all agree from the first frame on.
+	CGraphicBase::SetUIScale(m_pySystem.GetUIScale());
 
 	bool bAnotherWindow = false;
 

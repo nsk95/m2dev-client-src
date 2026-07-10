@@ -152,6 +152,20 @@ int CPythonApplication::OnLogoUpdate()
 		m_nRight = (this->GetWidth() >> 1) - ((this->GetHeight() * lWidth / lHeight) >> 1);
 	}
 
+	// ELEMENTIA-UISCALE: the logo quad is rendered under the (scaled) interface
+	// ortho projection, so convert the physical-pixel rect into UI space.
+	// Identity at UI scale 1.0.
+	{
+		const float fUIScale = CGraphicBase::GetUIScale();
+		if (fUIScale != 1.0f)
+		{
+			m_nLeft   = int(float(m_nLeft)   / fUIScale);
+			m_nRight  = int(float(m_nRight)  / fUIScale);
+			m_nTop    = int(float(m_nTop)    / fUIScale);
+			m_nBottom = int(float(m_nBottom) / fUIScale);
+		}
+	}
+
 
 
 	// Å©±â°¡ 1, Áï ÅØ½ºÃÄ °ø°£ÀÌ Á¦´ë·Î ÁØºñ ¾ÈµÈ°æ¿ì ´Ù½Ã ¸¸µç´Ù.

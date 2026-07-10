@@ -33,6 +33,35 @@ HRESULT					CGraphicBase::ms_hLastResult = NULL;
 int						CGraphicBase::ms_iWidth;
 int						CGraphicBase::ms_iHeight;
 
+float					CGraphicBase::ms_fUIScale = 1.0f;	// ELEMENTIA-UISCALE: 1.0 = vanilla
+
+// ELEMENTIA-UISCALE: global 2D-UI scale accessors. Clamped to a sane range so a
+// broken config value can never produce a zero/negative ortho projection.
+// NaN-safe: the negated-range test also rejects NaN (every NaN comparison is false),
+// so a "nan" config/binding value falls back to 1.0 instead of poisoning the projection.
+void CGraphicBase::SetUIScale(float fScale)
+{
+	if (!(fScale >= 0.5f && fScale <= 4.0f))
+		fScale = 1.0f;
+
+	ms_fUIScale = fScale;
+}
+
+float CGraphicBase::GetUIScale()
+{
+	return ms_fUIScale;
+}
+
+float CGraphicBase::GetUIVirtualWidth()
+{
+	return float(ms_iWidth) / ms_fUIScale;
+}
+
+float CGraphicBase::GetUIVirtualHeight()
+{
+	return float(ms_iHeight) / ms_fUIScale;
+}
+
 DWORD					CGraphicBase::ms_faceCount = 0;
 
 D3DCAPS9				CGraphicBase::ms_d3dCaps;

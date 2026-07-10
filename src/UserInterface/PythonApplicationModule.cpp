@@ -13,6 +13,21 @@ extern BOOL bVisibleNotice = true;
 extern BOOL bTestServerFlag = FALSE;
 extern int TWOHANDED_WEWAPON_ATT_SPEED_DECREASE_VALUE = 0;
 
+// ELEMENTIA-UISCALE: Python hands us web-page rectangles in UI (virtual)
+// coordinates, but the embedded WebView2 child is placed in physical client
+// pixels - convert here. Identity at UI scale 1.0.
+static void __UIRectToClientRect(RECT* prc)
+{
+	const float fUIScale = CGraphicBase::GetUIScale();
+	if (fUIScale == 1.0f)
+		return;
+
+	prc->left	= LONG(float(prc->left)   * fUIScale);
+	prc->top	= LONG(float(prc->top)    * fUIScale);
+	prc->right	= LONG(float(prc->right)  * fUIScale);
+	prc->bottom	= LONG(float(prc->bottom) * fUIScale);
+}
+
 PyObject* appShowWebPage(PyObject* poSelf, PyObject* poArgs)
 {
 	char* szWebPage;
@@ -21,13 +36,15 @@ PyObject* appShowWebPage(PyObject* poSelf, PyObject* poArgs)
 
 	PyObject* poRect=PyTuple_GetItem(poArgs, 1);
 	if (!PyTuple_Check(poRect))
-		return Py_BuildException();	
+		return Py_BuildException();
 
 	RECT rcWebPage;
 	rcWebPage.left=PyInt_AsLong(PyTuple_GetItem(poRect, 0));
 	rcWebPage.top=PyInt_AsLong(PyTuple_GetItem(poRect, 1));
 	rcWebPage.right=PyInt_AsLong(PyTuple_GetItem(poRect, 2));
 	rcWebPage.bottom=PyInt_AsLong(PyTuple_GetItem(poRect, 3));
+
+	__UIRectToClientRect(&rcWebPage);	// ELEMENTIA-UISCALE
 
 	CPythonApplication::Instance().ShowWebPage(
 		szWebPage,
@@ -40,13 +57,15 @@ PyObject* appMoveWebPage(PyObject* poSelf, PyObject* poArgs)
 {
 	PyObject* poRect=PyTuple_GetItem(poArgs, 0);
 	if (!PyTuple_Check(poRect))
-		return Py_BuildException();	
+		return Py_BuildException();
 
 	RECT rcWebPage;
 	rcWebPage.left=PyInt_AsLong(PyTuple_GetItem(poRect, 0));
 	rcWebPage.top=PyInt_AsLong(PyTuple_GetItem(poRect, 1));
 	rcWebPage.right=PyInt_AsLong(PyTuple_GetItem(poRect, 2));
 	rcWebPage.bottom=PyInt_AsLong(PyTuple_GetItem(poRect, 3));
+
+	__UIRectToClientRect(&rcWebPage);	// ELEMENTIA-UISCALE
 
 	CPythonApplication::Instance().MoveWebPage(rcWebPage);
 	return Py_BuildNone();
@@ -562,6 +581,42 @@ PyObject * appSetFPS(PyObject * poSelf, PyObject * poArgs)
 		return Py_BuildException();
 
 	CPythonApplication::Instance().SetFPS(iFPS);
+
+	return Py_BuildNone();
+}
+
+// ELEMENTIA-UISCALE: query the global 2D-UI scale (app.GetUIScale()).
+// Useful for Python code that mixes UI coordinates with physical sizes.
+PyObject * appGetUIScale(PyObject * poSelf, PyObject * poArgs)
+{
+	return Py_BuildValue("f", CGraphicBase::GetUIScale());
+}
+
+// ELEMENTIA-UISCALE: change the UI scale at runtime (app.SetUIScale(f)).
+// The scale is applied to the interface projection immediately and the window
+// manager's virtual screen size is re-derived from the current client size.
+// NOTE: already-built Python windows keep their pixel layout - callers should
+// rebuild/re-center the interface afterwards. The value is not persisted; set
+// UI_SCALE in config/metin2.cfg for a permanent setting.
+PyObject * appSetUIScale(PyObject * poSelf, PyObject * poArgs)
+{
+	float fScale;
+	if (!PyTuple_GetFloat(poArgs, 0, &fScale))
+		return Py_BuildException();
+
+	CGraphicBase::SetUIScale(fScale);
+
+	RECT rcClient;
+	CPythonApplication::Instance().GetClientRect(&rcClient);
+
+	const long lWidth  = rcClient.right - rcClient.left;
+	const long lHeight = rcClient.bottom - rcClient.top;
+	if (lWidth > 0 && lHeight > 0)
+	{
+		UI::CWindowManager& rkWndMgr = UI::CWindowManager::Instance();
+		rkWndMgr.SetResolution(int(lWidth), int(lHeight));
+		rkWndMgr.SetScreenSize(lWidth, lHeight);
+	}
 
 	return Py_BuildNone();
 }
@@ -1239,6 +1294,8 @@ void initapp()
 		{ "GetFaceCount",				appGetFaceCount,				METH_VARARGS },
 		{ "SetFPS",						appSetFPS,						METH_VARARGS },
 		{ "SetUnlockFPS",				appSetUnlockFPS,				METH_VARARGS },	// ELEMENTIA
+		{ "GetUIScale",					appGetUIScale,					METH_VARARGS },	// ELEMENTIA-UISCALE
+		{ "SetUIScale",					appSetUIScale,					METH_VARARGS },	// ELEMENTIA-UISCALE
 		{ "SetGlobalCenterPosition",	appSetGlobalCenterPosition,		METH_VARARGS },
 		{ "SetCenterPosition",			appSetCenterPosition,			METH_VARARGS },
 		{ "GetCursorPosition",			appGetCursorPosition,			METH_VARARGS },

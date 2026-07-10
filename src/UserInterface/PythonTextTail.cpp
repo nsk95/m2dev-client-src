@@ -132,7 +132,9 @@ void CPythonTextTail::UpdateTextTail(TTextTail * pTextTail)
 	rpyGraphic.Identity();
 
 	const D3DXVECTOR3 & c_rv3Position = pTextTail->pOwner->GetPosition();
-	rpyGraphic.ProjectPosition(c_rv3Position.x,
+	// ELEMENTIA-UISCALE: text tails render under the (scaled) interface ortho
+	// projection, so project into UI space instead of physical pixels.
+	rpyGraphic.ProjectPositionUI(c_rv3Position.x,
 							   c_rv3Position.y,
 							   c_rv3Position.z + pTextTail->fHeight,
 							   &pTextTail->x,

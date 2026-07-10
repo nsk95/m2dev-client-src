@@ -704,8 +704,16 @@ DWORD CPythonItem::__Pick(const POINT& c_rkPtMouse)
 		}
 	}
 
+	// ELEMENTIA-UISCALE: text tail rectangles live in UI (virtual) coordinates
+	// (see CPythonTextTail::UpdateTextTail), so pick with the window manager's
+	// UI-space mouse position instead of the raw client-pixel c_rkPtMouse.
+	// Identical at UI scale 1.0. The 3D ground-item ray test above is unaffected
+	// (it uses the global pick ray).
+	long lUIMouseX, lUIMouseY;
+	UI::CWindowManager::Instance().GetMousePosition(lUIMouseX, lUIMouseY);
+
 	CPythonTextTail& rkTextTailMgr=CPythonTextTail::Instance();
-	return rkTextTailMgr.Pick(c_rkPtMouse.x, c_rkPtMouse.y);
+	return rkTextTailMgr.Pick(lUIMouseX, lUIMouseY);
 }
 
 bool CPythonItem::GetPickedItemID(DWORD* pdwPickedItemID)

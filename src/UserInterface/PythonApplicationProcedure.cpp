@@ -45,6 +45,58 @@ void CPythonApplication::__MinimizeFullScreenWindow(HWND hWnd, DWORD dwWidth, DW
 	ShowWindow(hWnd, SW_MINIMIZE);
 }
 
+// ELEMENTIA-RESIZE: central handler for a changed client size (drag-resize end,
+// maximize, restore). Resets the D3D9Ex backbuffer to the new client size and
+// propagates the size to the UI layer so rendering and mouse hit-testing stay
+// consistent. No-ops when nothing changed, the device is fullscreen-exclusive,
+// or the window is minimized/degenerate.
+void CPythonApplication::__OnWindowSizeChanged()
+{
+	if (!m_isWindowed || m_isWindowFullScreenEnable)
+		return;
+
+	RECT rcWnd;
+	GetClientRect(&rcWnd);
+
+	const UINT uWidth  = UINT(rcWnd.right - rcWnd.left);
+	const UINT uHeight = UINT(rcWnd.bottom - rcWnd.top);
+
+	if (uWidth == 0 || uHeight == 0)		// minimized / degenerate
+		return;
+
+	if (uWidth == m_dwWidth && uHeight == m_dwHeight)
+		return;
+
+	// The character shadow map is a D3DPOOL_DEFAULT render target. A D3D9Ex
+	// Reset() keeps the resource alive but its contents become undefined, so we
+	// recreate it around the reset - the exact pattern the lost-device path in
+	// Process() already uses.
+	m_pyBackground.ReleaseCharacterShadowTexture();
+
+	if (!m_grpDevice.ResizeBackBuffer(uWidth, uHeight))
+	{
+		// Reset failed: keep the old logical size; the lost-device handling in
+		// Process() will retry restoring the device on the next frame.
+		m_pyBackground.CreateCharacterShadowTexture();
+		TraceError("__OnWindowSizeChanged: ResizeBackBuffer(%u, %u) failed", uWidth, uHeight);
+		return;
+	}
+
+	m_pyBackground.CreateCharacterShadowTexture();
+
+	m_dwWidth  = uWidth;
+	m_dwHeight = uHeight;
+
+	// Keep the UI layer in sync:
+	// - SetResolution: physical client size (basis of the mouse mapping)
+	// - SetScreenSize: physical size too; the window manager derives its virtual
+	//   UI size from it (divides by the UI scale, see ELEMENTIA-UISCALE there).
+	// NOTE: already-created Python windows keep their positions (anchored
+	// top-left); only the layer sizes and center calculations use the new size.
+	m_kWndMgr.SetResolution(int(uWidth), int(uHeight));
+	m_kWndMgr.SetScreenSize(long(uWidth), long(uHeight));
+}
+
 LRESULT CPythonApplication::WindowProcedure(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam)
 {
 	const int c_DoubleClickTime = 300;
@@ -199,19 +251,20 @@ LRESULT CPythonApplication::WindowProcedure(HWND hWnd, UINT uiMsg, WPARAM wParam
 			}
 			break;
 
+		// ELEMENTIA-RESIZE: reworked size handling.
+		// - fixes the vanilla height bug (rcWnd.bottom - rcWnd.left)
+		// - during an interactive drag-resize (WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE)
+		//   the device reset is deferred to WM_EXITSIZEMOVE so we do not Reset()
+		//   the device on every intermediate WM_SIZE tick
+		// - maximize/restore (which arrive as WM_SIZE outside a size-move loop)
+		//   are applied immediately
 		case WM_SIZE:
 			switch (wParam)
 			{
 				case SIZE_RESTORED:
 				case SIZE_MAXIMIZED:
-					{
-						RECT rcWnd; 
-						GetClientRect(&rcWnd); 
-				
-						UINT uWidth=rcWnd.right-rcWnd.left; 
-						UINT uHeight=rcWnd.bottom-rcWnd.left; 
-						m_grpDevice.ResizeBackBuffer(uWidth, uHeight);				
-					}
+					if (!m_isWindowSizing)
+						__OnWindowSizeChanged();
 					break;
 			}
 
@@ -224,22 +277,40 @@ LRESULT CPythonApplication::WindowProcedure(HWND hWnd, UINT uiMsg, WPARAM wParam
 
 			break;
 
-		case WM_EXITSIZEMOVE:    
+		case WM_ENTERSIZEMOVE:	// ELEMENTIA-RESIZE
+			m_isWindowSizing = true;
+			break;
+
+		case WM_EXITSIZEMOVE:	// ELEMENTIA-RESIZE
+			m_isWindowSizing = false;
+			__OnWindowSizeChanged();
+			OnSizeChange(short(LOWORD(lParam)), short(HIWORD(lParam)));
+			break;
+
+		// ELEMENTIA-RESIZE: keep the client area from being dragged below a
+		// playable minimum; tiny/zero backbuffers break the renderer and the UI.
+		case WM_GETMINMAXINFO:
+			if (m_isWindowed && CPythonSystem::Instance().IsWindowResizeEnabled())
 			{
-				RECT rcWnd; 
-				GetClientRect(&rcWnd); 
-				
-				UINT uWidth=rcWnd.right-rcWnd.left; 
-				UINT uHeight=rcWnd.bottom-rcWnd.left; 
-				m_grpDevice.ResizeBackBuffer(uWidth, uHeight);				
-				OnSizeChange(short(LOWORD(lParam)), short(HIWORD(lParam)));
+				RECT rcMin = { 0, 0, 640, 480 };
+				AdjustWindowRectEx(&rcMin, GetWindowLong(hWnd, GWL_STYLE), FALSE, GetWindowLong(hWnd, GWL_EXSTYLE));
+
+				MINMAXINFO* pMinMax = reinterpret_cast<MINMAXINFO*>(lParam);
+				pMinMax->ptMinTrackSize.x = rcMin.right - rcMin.left;
+				pMinMax->ptMinTrackSize.y = rcMin.bottom - rcMin.top;
+				return 0;
 			}
-			break; 
+			break;
 		case WM_NCLBUTTONDOWN:
 			{
 				switch (wParam)
 				{
 				case HTMAXBUTTON:
+					// ELEMENTIA-RESIZE: with the resizable frame enabled, let the
+					// maximize button do its default job (vanilla swallows it).
+					if (m_isWindowed && CPythonSystem::Instance().IsWindowResizeEnabled())
+						break;
+					return 0;
 				case HTSYSMENU:
 					return 0;
 				case HTMINBUTTON:

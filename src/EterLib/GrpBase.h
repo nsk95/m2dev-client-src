@@ -203,6 +203,18 @@ class CGraphicBase
 		void		UpdateViewMatrix();
 		
 		void		SetViewport(DWORD dwX, DWORD dwY, DWORD dwWidth, DWORD dwHeight, float fMinZ, float fMaxZ);
+
+		// ELEMENTIA-UISCALE: global 2D-UI scale factor (default 1.0 = vanilla).
+		// The UI keeps working in "virtual" pixel coordinates of size
+		// (backbuffer / scale); the interface ortho projection blows them up to
+		// the real backbuffer, so fixed-pixel uiscript layouts stay readable at
+		// high resolutions. Mouse hit-testing goes through the same virtual
+		// space (see CWindowManager::SetMousePosition), so it stays consistent.
+		static void		SetUIScale(float fScale);
+		static float	GetUIScale();
+		static float	GetUIVirtualWidth();	// backbuffer width  / UI scale
+		static float	GetUIVirtualHeight();	// backbuffer height / UI scale
+
 		static void		GetBackBufferSize(UINT* puWidth, UINT* puHeight);
 		static bool		IsTLVertexClipping();
 		static bool		IsFastTNL();
@@ -237,7 +249,9 @@ class CGraphicBase
 		static HRESULT					ms_hLastResult;
 
 		static int						ms_iWidth;
-		static int						ms_iHeight;	
+		static int						ms_iHeight;
+
+		static float					ms_fUIScale;	// ELEMENTIA-UISCALE
 
 		static HWND						ms_hWnd;
 		static HDC						ms_hDC;

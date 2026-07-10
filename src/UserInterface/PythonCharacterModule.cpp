@@ -862,7 +862,8 @@ PyObject * chrGetProjectPosition(PyObject* poSelf, PyObject* poArgs)
 	CPythonGraphic & rpyGraphic = CPythonGraphic::Instance();
 
 	float fx, fy, fz;
-	rpyGraphic.ProjectPosition(PixelPosition.x,
+	// ELEMENTIA-UISCALE: Python consumes this for UI placement -> UI space.
+	rpyGraphic.ProjectPositionUI(PixelPosition.x,
 							   -PixelPosition.y,
 							   PixelPosition.z + float(iHeight),
 							   &fx, &fy, &fz);
