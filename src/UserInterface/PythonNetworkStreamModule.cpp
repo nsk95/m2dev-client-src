@@ -401,19 +401,24 @@ PyObject* netDirectEnter(PyObject* poSelf, PyObject* poArgs)
 }
 
 // ELEMENTIA-HANDOFF: query / drive the Electron session handoff read at boot.
-// The intro/login Python does:  if net.IsHandoffPending(): net.DirectEnterFromHandoff()
-// which skips the login + char-select screens; otherwise the flow is unchanged.
+// The boot Python (prototype.py) does:
+//   if net.IsHandoffPending(): mainStream.SetHandoffEnterPhase()
+// (networkmodule.py) which calls net.DirectEnterFromHandoff() and skips the
+// login + char-select screens; otherwise the flow is unchanged.
 PyObject* netIsHandoffPending(PyObject* poSelf, PyObject* poArgs)
 {
 	return Py_BuildValue("i", Elementia_IsHandoffPending() ? 1 : 0);
 }
 
+// SECURITY: deliberately does NOT expose the u32 login key to script space —
+// Python only ever needs name/host/port/slot (display + stream.slot bookkeeping).
+// The key flows exclusively C++-internally via DirectEnterFromHandoff().
 PyObject* netGetHandoffInfo(PyObject* poSelf, PyObject* poArgs)
 {
 	if (!Elementia_IsHandoffPending())
 		return Py_BuildNone();
 	const SElementiaHandoff& ho = Elementia_GetHandoff();
-	return Py_BuildValue("(sisii)", ho.name.c_str(), (int)ho.key,
+	return Py_BuildValue("(ssii)", ho.name.c_str(),
 						 ho.host.c_str(), (int)ho.port, (int)ho.slot);
 }
 
@@ -424,6 +429,9 @@ PyObject* netDirectEnterFromHandoff(PyObject* poSelf, PyObject* poArgs)
 	const SElementiaHandoff& ho = Elementia_GetHandoff();
 	CPythonNetworkStream& rkNetStream = CPythonNetworkStream::Instance();
 	rkNetStream.DirectEnterFromHandoff(ho.name.c_str(), ho.key, ho.host.c_str(), ho.port, ho.slot);
+	// Single-use: the key now lives only in the network stream (m_dwLoginKey);
+	// wipe the parsed handoff so no second consumer can read it.
+	Elementia_ClearHandoff();
 	return Py_BuildNone();
 }
 

@@ -226,3 +226,12 @@ const SElementiaHandoff& Elementia_GetHandoff()
 {
 	return g_kHandoff;
 }
+
+void Elementia_ClearHandoff()
+{
+	// Best effort: overwrite the key before dropping the struct so the u32
+	// does not linger in this global once it has been handed to the stream.
+	g_kHandoff.key = 0;
+	g_kHandoff = SElementiaHandoff();
+	g_bHandoffPending = false;
+}

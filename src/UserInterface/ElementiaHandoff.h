@@ -44,6 +44,10 @@ bool Elementia_IsHandoffPending();
 // The parsed handoff (only meaningful when Elementia_IsHandoffPending() is true).
 const SElementiaHandoff& Elementia_GetHandoff();
 
+// Single-use: wipe the stored handoff (incl. the login key) after it has been
+// driven into CPythonNetworkStream::DirectEnterFromHandoff().
+void Elementia_ClearHandoff();
+
 // Lower-level building blocks (exposed for testing / reuse).
 bool Elementia_ParseHandoffArgs(const char* lpCmdLine, std::string& pipeName, std::string& nonce);
 bool Elementia_ReadHandoffPipe(const std::string& pipeName, const std::string& nonce, SElementiaHandoff& out);
