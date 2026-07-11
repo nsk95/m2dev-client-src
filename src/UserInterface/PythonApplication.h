@@ -42,6 +42,8 @@
 #include "AbstractApplication.h"
 #include "MovieMan.h"
 
+#include "UserScriptManager.h" // ELEMENTIA-USERSCRIPT
+
 #include <qedit.h>
 
 class CPythonApplication : public CMSApplication, public CInputKeyboard, public IAbstractApplication
@@ -324,6 +326,8 @@ class CPythonApplication : public CMSApplication, public CInputKeyboard, public 
 		CGameEventManager			m_GameEventManager;
 		CItemManager				m_kItemMgr;
 		CMovieMan					m_MovieManager;
+
+		CUserScriptManager			m_UserScriptManager; // ELEMENTIA-USERSCRIPT: sandboxed Lua addon host
 
 		UI::CWindowManager			m_kWndMgr;
 		CEffectManager				m_kEftMgr;

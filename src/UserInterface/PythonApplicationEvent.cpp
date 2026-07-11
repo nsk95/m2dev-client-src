@@ -16,12 +16,22 @@ void CPythonApplication::OnUIUpdate()
 {
 	UI::CWindowManager& rkUIMgr=UI::CWindowManager::Instance();
 	rkUIMgr.Update();
+
+	// ELEMENTIA-USERSCRIPT: lazily boot the sandbox once (resources/fonts are
+	// ready by the first frame) and pump script events/timers each frame. Fully
+	// isolated: a script fault is logged, never crashes the client.
+	if (!m_UserScriptManager.IsInitialized())
+		m_UserScriptManager.Initialize();
+	m_UserScriptManager.Update(m_fGlobalTime, m_fGlobalElapsedTime);
 }
 
 void CPythonApplication::OnUIRender()
 {
 	UI::CWindowManager& rkUIMgr=UI::CWindowManager::Instance();
 	rkUIMgr.Render();
+
+	// ELEMENTIA-USERSCRIPT: draw script-owned on-screen text widgets on top of the UI.
+	m_UserScriptManager.Render();
 }
 
 void CPythonApplication::OnSizeChange(int width, int height)

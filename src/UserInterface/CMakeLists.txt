@@ -29,6 +29,7 @@ target_link_libraries(UserInterface
 	lzo2
 	libzstd_static
 	mio
+	lua
 	
 	DirectX
 	Granny

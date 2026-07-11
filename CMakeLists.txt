@@ -68,6 +68,8 @@ include_directories("src")
 include_directories("extern/include")
 include_directories("vendor/libsodium/src/libsodium/include")
 include_directories("vendor/freetype-2.13.3/include")
+# ELEMENTIA-USERSCRIPT: expose the vendored Lua 5.4 headers to the client.
+include_directories("vendor/lua-5.4.7/src")
 
 # Add subdirectories for libraries and executables
 add_subdirectory(vendor)

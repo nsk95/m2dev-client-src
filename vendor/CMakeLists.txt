@@ -2,6 +2,9 @@ add_subdirectory(lzo-2.10)
 add_subdirectory(mio)
 add_subdirectory(libsodium)
 
+# ELEMENTIA-USERSCRIPT: vendored Lua 5.4.7 for the client userscript sandbox.
+add_subdirectory(lua-5.4.7)
+
 ## zstd is a bit tricky
 set(ZSTD_BUILD_SHARED OFF CACHE BOOL "BUILD SHARED LIBRARIES" FORCE)
 add_subdirectory(zstd-1.5.7/build/cmake zstd)
@@ -19,6 +22,9 @@ if (WIN32)
 	set_target_properties(lzo2 PROPERTIES FOLDER vendor)
 	set_target_properties(sodium PROPERTIES FOLDER vendor)
 	set_target_properties(freetype PROPERTIES FOLDER vendor)
+
+	# ELEMENTIA-USERSCRIPT
+	set_target_properties(lua PROPERTIES FOLDER vendor)
 
 	## zstd stuff
 	set_target_properties(zstd PROPERTIES FOLDER vendor/zstd)

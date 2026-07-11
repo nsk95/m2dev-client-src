@@ -1135,6 +1135,10 @@ void CPythonApplication::Clear()
 
 void CPythonApplication::Destroy()
 {
+	// ELEMENTIA-USERSCRIPT: tear down the sandbox before the UI/resource systems
+	// go away (widgets hold text instances backed by the default font resource).
+	m_UserScriptManager.Destroy();
+
 	// SphereMap
 	CGrannyMaterial::DestroySphereMap();
 

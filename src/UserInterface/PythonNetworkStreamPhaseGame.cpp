@@ -2220,6 +2220,12 @@ bool CPythonNetworkStream::RecvTargetPacket()
 				if (iHPPercent > 100) iHPPercent = 100;
 
 				PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_GAME], "SetHPTargetBoard", Py_BuildValue("(ii)", TargetPacket.dwVID, iHPPercent));
+
+				// ELEMENTIA-USERSCRIPT: cache the target HP% read-only so the
+				// sandboxed target.getHPPercent() binding can surface it. This is
+				// the only place the client learns a target's HP%. Read-only.
+				if (CUserScriptManager::InstancePtr())
+					CUserScriptManager::Instance().NotifyTargetHP(TargetPacket.dwVID, iHPPercent);
 			}
 			else
 				PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_GAME], "CloseTargetBoard", Py_BuildValue("()"));

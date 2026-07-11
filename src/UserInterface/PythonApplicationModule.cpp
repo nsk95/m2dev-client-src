@@ -1,6 +1,7 @@
 #include "StdAfx.h"
 #include "Resource.h"
 #include "PythonApplication.h"
+#include "PythonSystem.h"	// ELEMENTIA-OPTIONS: config (UI_SCALE / WINDOW_RESIZE) persistence
 #include "EterLib/Camera.h"
 #include "PackLib/PackManager.h"
 #include "EterBase/tea.h"
@@ -633,6 +634,57 @@ PyObject * appSetUnlockFPS(PyObject * poSelf, PyObject * poArgs)
 	return Py_BuildNone();
 }
 
+// ELEMENTIA-OPTIONS: query the current FPS-unlock state (app.IsUnlockFPS() -> 0/1)
+// so the in-game options window can initialise its FPS control on open.
+PyObject * appIsUnlockFPS(PyObject * poSelf, PyObject * poArgs)
+{
+	return Py_BuildValue("i", CPythonApplication::Instance().IsUnlockFPS() ? 1 : 0);
+}
+
+// ELEMENTIA-OPTIONS: read the persisted window-resize flag from the config
+// (app.GetConfigWindowResize() -> 0/1) to initialise the options toggle.
+PyObject * appGetConfigWindowResize(PyObject * poSelf, PyObject * poArgs)
+{
+	return Py_BuildValue("i", CPythonSystem::Instance().IsWindowResizeEnabled() ? 1 : 0);
+}
+
+// ELEMENTIA-OPTIONS: set the window-resize flag in the config struct
+// (app.SetConfigWindowResize(0/1)). Takes effect on the next client start;
+// call systemSetting.SaveConfig() afterwards to persist to config/metin2.cfg.
+PyObject * appSetConfigWindowResize(PyObject * poSelf, PyObject * poArgs)
+{
+	int iEnable;
+	if (!PyTuple_GetInteger(poArgs, 0, &iEnable))
+		return Py_BuildException();
+
+	CPythonSystem::TConfig * pConfig = CPythonSystem::Instance().GetConfig();
+	if (pConfig)
+		pConfig->bWindowResize = iEnable ? true : false;
+
+	return Py_BuildNone();
+}
+
+// ELEMENTIA-OPTIONS: write the UI scale into the config struct so it is
+// persisted to config/metin2.cfg as UI_SCALE (app.SetConfigUIScale(f)).
+// Runtime application stays in app.SetUIScale(f); call systemSetting.SaveConfig()
+// to write the file. Value is clamped to the same [0.5, 4.0] range the loader
+// accepts (NaN-safe: the negated range test also rejects NaN).
+PyObject * appSetConfigUIScale(PyObject * poSelf, PyObject * poArgs)
+{
+	float fScale;
+	if (!PyTuple_GetFloat(poArgs, 0, &fScale))
+		return Py_BuildException();
+
+	if (!(fScale >= 0.5f && fScale <= 4.0f))
+		fScale = 1.0f;
+
+	CPythonSystem::TConfig * pConfig = CPythonSystem::Instance().GetConfig();
+	if (pConfig)
+		pConfig->fUIScale = fScale;
+
+	return Py_BuildNone();
+}
+
 PyObject * appSetGlobalCenterPosition(PyObject * poSelf, PyObject * poArgs)
 {
 	int x;
@@ -1236,10 +1288,62 @@ PyObject* appReloadLocale(PyObject* poSelf, PyObject* poArgs)
 	return Py_BuildValue("i", 1);
 }
 
+// ELEMENTIA-USERSCRIPT: read-only addon-manager bindings.
+// These expose the sandboxed Lua userscript host to the in-game addon manager
+// UI (uiuserscript.py). They are ADDITIVE and do NOT widen the Lua sandbox in
+// any way - they only let the player list/enable/disable/reload addons.
+PyObject* appGetUserScriptCount(PyObject* poSelf, PyObject* poArgs)
+{
+	return Py_BuildValue("i", CUserScriptManager::Instance().ScriptCount());
+}
+
+PyObject* appGetUserScriptInfo(PyObject* poSelf, PyObject* poArgs)
+{
+	int index;
+	if (!PyTuple_GetInteger(poArgs, 0, &index))
+		return Py_BuildException();
+
+	CUserScriptManager& mgr = CUserScriptManager::Instance();
+	if (index < 0 || index >= mgr.ScriptCount())
+		return Py_BuildException();
+
+	// (name, enabled, faulted, errorCount)
+	return Py_BuildValue("(siii)",
+		mgr.ScriptName(index),
+		mgr.ScriptEnabled(index) ? 1 : 0,
+		mgr.ScriptFaulted(index) ? 1 : 0,
+		mgr.ScriptErrorCount(index));
+}
+
+PyObject* appSetUserScriptEnabled(PyObject* poSelf, PyObject* poArgs)
+{
+	int index;
+	if (!PyTuple_GetInteger(poArgs, 0, &index))
+		return Py_BuildException();
+	int enabled;
+	if (!PyTuple_GetInteger(poArgs, 1, &enabled))
+		return Py_BuildException();
+
+	CUserScriptManager::Instance().SetScriptEnabled(index, enabled ? true : false);
+	return Py_BuildNone();
+}
+
+PyObject* appReloadUserScripts(PyObject* poSelf, PyObject* poArgs)
+{
+	CUserScriptManager::Instance().ReloadScripts();
+	return Py_BuildNone();
+}
+
 void initapp()
 {
 	static PyMethodDef s_methods[] =
 	{
+		// ELEMENTIA-USERSCRIPT: addon-manager surface (read/enable/reload).
+		{ "GetUserScriptCount",			appGetUserScriptCount,			METH_VARARGS },
+		{ "GetUserScriptInfo",			appGetUserScriptInfo,			METH_VARARGS },
+		{ "SetUserScriptEnabled",		appSetUserScriptEnabled,		METH_VARARGS },
+		{ "ReloadUserScripts",			appReloadUserScripts,			METH_VARARGS },
+
 		// TEXTTAIL_LIVINGTIME_CONTROL
 		{ "SetTextTailLivingTime",		appSetTextTailLivingTime,		METH_VARARGS },
 		// END_OF_TEXTTAIL_LIVINGTIME_CONTROL
@@ -1294,6 +1398,10 @@ void initapp()
 		{ "GetFaceCount",				appGetFaceCount,				METH_VARARGS },
 		{ "SetFPS",						appSetFPS,						METH_VARARGS },
 		{ "SetUnlockFPS",				appSetUnlockFPS,				METH_VARARGS },	// ELEMENTIA
+		{ "IsUnlockFPS",				appIsUnlockFPS,					METH_VARARGS },	// ELEMENTIA-OPTIONS
+		{ "GetConfigWindowResize",		appGetConfigWindowResize,		METH_VARARGS },	// ELEMENTIA-OPTIONS
+		{ "SetConfigWindowResize",		appSetConfigWindowResize,		METH_VARARGS },	// ELEMENTIA-OPTIONS
+		{ "SetConfigUIScale",			appSetConfigUIScale,			METH_VARARGS },	// ELEMENTIA-OPTIONS
 		{ "GetUIScale",					appGetUIScale,					METH_VARARGS },	// ELEMENTIA-UISCALE
 		{ "SetUIScale",					appSetUIScale,					METH_VARARGS },	// ELEMENTIA-UISCALE
 		{ "SetGlobalCenterPosition",	appSetGlobalCenterPosition,		METH_VARARGS },
