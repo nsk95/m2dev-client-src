@@ -283,6 +283,7 @@ static const char* GetHeaderName(uint16_t header)
 		{ GC::KEY_CHALLENGE,      "GC_KEY_CHALLENGE" },
 		{ GC::KEY_COMPLETE,       "GC_KEY_COMPLETE" },
 		{ CG::CLIENT_VERSION,     "CG_CLIENT_VERSION" },
+		{ CG::VERSION_GATE,       "CG_VERSION_GATE" }, // ELEMENTIA VERSION-GATE
 		{ CG::STATE_CHECKER,      "CG_STATE_CHECKER" },
 		{ GC::RESPOND_CHANNELSTATUS, "GC_RESPOND_CHANNELSTATUS" },
 		{ CG::TEXT,               "CG_TEXT" },

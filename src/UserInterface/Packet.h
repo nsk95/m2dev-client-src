@@ -45,6 +45,9 @@ namespace CG
     // Control (PONG, KEY_RESPONSE moved to EterLib/ControlPackets.h)
     constexpr uint16_t CLIENT_VERSION     = 0x000D;
     constexpr uint16_t STATE_CHECKER      = 0x000F;
+    // ELEMENTIA VERSION-GATE: Build-Version-Meldung direkt vor LOGIN3/LOGIN2;
+    // der Server erzwingt MIN_CLIENT_VERSION (share/conf/game.txt), sonst "UPDVER".
+    constexpr uint16_t VERSION_GATE       = 0x0010;
     constexpr uint16_t TEXT               = 0x0011;
 
     // Authentication
@@ -1100,6 +1103,28 @@ typedef struct command_client_version
 	char filename[32+1];
 	char timestamp[32+1];
 } TPacketCGClientVersion;
+
+// ELEMENTIA VERSION-GATE (server-autoritatives Versions-Gating, additiv):
+// component=CLIENT (2) + ELEMENTIA_CLIENT_VERSION (ElementiaVersion.h) wird
+// direkt vor CG_LOGIN2 (PythonNetworkStreamPhaseLogin.cpp) bzw. vor CG_LOGIN3
+// (AccountConnector.cpp) gesendet — bereits unter dem Session-Cipher. Layout
+// MUSS bit-genau mit dem Server (packet_structs.h TPacketCGVersionGate) und
+// dem Node-Launcher (packets.js encodeVersionGate) synchron bleiben.
+enum EVersionGateComponent
+{
+	VERSION_GATE_COMPONENT_LAUNCHER = 1,
+	VERSION_GATE_COMPONENT_CLIENT   = 2,
+};
+
+typedef struct command_version_gate
+{
+	uint16_t	header;		// CG::VERSION_GATE (0x0010)
+	uint16_t	length;		// 9
+	uint8_t		component;	// EVersionGateComponent
+	uint32_t	version;	// monotoner Build-Integer (ELEMENTIA_CLIENT_VERSION)
+} TPacketCGVersionGate;
+
+static_assert(sizeof(TPacketCGVersionGate) == 9, "VERSION_GATE wire size must stay 9 bytes (server sync)");
 
 typedef struct command_crc_report
 {

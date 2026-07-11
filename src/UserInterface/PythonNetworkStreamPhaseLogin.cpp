@@ -2,6 +2,7 @@
 #include "PythonNetworkStream.h"
 #include "Packet.h"
 #include "AccountConnector.h"
+#include "ElementiaVersion.h" // ELEMENTIA VERSION-GATE (ELEMENTIA_CLIENT_VERSION)
 
 // Login ---------------------------------------------------------------------------
 void CPythonNetworkStream::LoginPhase()
@@ -153,6 +154,21 @@ bool CPythonNetworkStream::__RecvLoginFailurePacket()
 
 bool CPythonNetworkStream::SendLoginPacketNew(const char * c_szName, const char * c_szPassword)
 {
+	// ELEMENTIA VERSION-GATE: Build-Version VOR dem LOGIN2 melden. Der Server
+	// verlangt dieses Paket (fail-closed), sobald MIN_CLIENT_VERSION in
+	// share/conf/game.txt > 0 ist — sonst LOGIN_FAILURE "UPDVER".
+	TPacketCGVersionGate kVersionGatePacket{};
+	kVersionGatePacket.header = CG::VERSION_GATE;
+	kVersionGatePacket.length = sizeof(kVersionGatePacket);
+	kVersionGatePacket.component = VERSION_GATE_COMPONENT_CLIENT;
+	kVersionGatePacket.version = ELEMENTIA_CLIENT_VERSION;
+
+	if (!Send(sizeof(kVersionGatePacket), &kVersionGatePacket))
+	{
+		Tracen("SendVersionGate Error");
+		return false;
+	}
+
 	TPacketCGLogin2 LoginPacket;
 	LoginPacket.header = CG::LOGIN2;
 	LoginPacket.length = sizeof(LoginPacket);

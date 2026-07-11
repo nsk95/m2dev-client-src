@@ -2,6 +2,7 @@
 #include "AccountConnector.h"
 #include "Packet.h"
 #include "PythonNetworkStream.h"
+#include "ElementiaVersion.h" // ELEMENTIA VERSION-GATE (ELEMENTIA_CLIENT_VERSION)
 
 void CAccountConnector::SetHandler(PyObject* poHandler)
 {
@@ -123,6 +124,20 @@ bool CAccountConnector::__AuthState_RecvPhase()
 	}
 	else if (kPacketPhase.phase == PHASE_AUTH)
 	{
+		// ELEMENTIA VERSION-GATE: Build-Version VOR dem LOGIN3 melden (Pflicht,
+		// sobald der Server MIN_CLIENT_VERSION > 0 setzt; sonst "UPDVER"-Reject).
+		TPacketCGVersionGate kVersionGatePacket{};
+		kVersionGatePacket.header = CG::VERSION_GATE;
+		kVersionGatePacket.length = sizeof(kVersionGatePacket);
+		kVersionGatePacket.component = VERSION_GATE_COMPONENT_CLIENT;
+		kVersionGatePacket.version = ELEMENTIA_CLIENT_VERSION;
+
+		if (!Send(sizeof(kVersionGatePacket), &kVersionGatePacket))
+		{
+			Tracen(" CAccountConnector::__AuthState_RecvPhase - SendVersionGate Error");
+			return false;
+		}
+
 		TPacketCGLogin3 LoginPacket;
 		LoginPacket.header = CG::LOGIN3;
 		LoginPacket.length = sizeof(LoginPacket);
