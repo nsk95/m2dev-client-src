@@ -1,7 +1,7 @@
 ﻿file(GLOB_RECURSE FILE_SOURCES "*.h" "*.c" "*.cpp")
 
 add_executable(UserInterface WIN32 ${FILE_SOURCES} ${CMAKE_SOURCE_DIR}/src/UserInterface/UserInterface.rc)
-set_target_properties(UserInterface PROPERTIES LINK_FLAGS "/level='requireAdministrator' /uiAccess='false'"
+set_target_properties(UserInterface PROPERTIES LINK_FLAGS "/level='asInvoker' /uiAccess='false'"
 	RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 	OUTPUT_NAME_DEBUG "Metin2_Debug"
 	OUTPUT_NAME_RELEASE "Metin2_Release"
