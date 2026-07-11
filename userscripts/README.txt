@@ -29,6 +29,14 @@ What you can use (curated, sandboxed API - ALL gameplay reads are READ-ONLY):
   inventory.isEmpty(slot) -> bool
   inventory.countByVnum(vnum) -> n
 
+  equipment.slotCount() -> n           READ-ONLY view of YOUR worn gear
+  equipment.getItemVnum(slot) -> vnum  (no equip/unequip/move/use)
+  equipment.getItemCount(slot) -> n    slot = equipment.slot.* (see below)
+  equipment.isEmpty(slot) -> bool
+  equipment.slot.WEAPON / .BODY / .HEAD / .SHIELD / .SHOES / .WRIST /
+    .NECK / .EAR / .UNIQUE1 / .UNIQUE2 / .ARROW / .RING1 / .RING2 / .BELT /
+    .COSTUME_BODY / .COSTUME_HAIR / .COSTUME_WEAPON   wear-position constants
+
   buff.has(affectId) -> bool           READ-ONLY active-affect check on you
   buff.ids.DASH / .GEOMGYEONG / ...    curated affect id constants
 
@@ -51,8 +59,19 @@ What you can use (curated, sandboxed API - ALL gameplay reads are READ-ONLY):
   ui.createRect() -> id                solid colour panel (setSize + setColor)
   ui.createBar()  -> id                progress bar (setSize + setProgress +
                                        setColor + setBackColor)
+  ui.createIcon() -> id                item-icon widget (see setIcon below)
   ui.setText(id, str) / setPosition(id,x,y) / setColor(id,r,g,b[,a])
   ui.setSize(id,w,h) / setProgress(id,0..1) / setBackColor(id,r,g,b[,a])
+  ui.setIcon(id, vnum)                 show a client-internal ITEM icon by vnum
+                                       (0 clears it). There is NO file-path arg:
+                                       the icon is resolved through the client's
+                                       own item table, so a script can never
+                                       load an arbitrary file.
+  ui.setIconKey(id, key)               show a CURATED icon by short key name
+                                       (key = [a-z0-9_], <=32). The client maps
+                                       it to a fixed whitelisted resource under
+                                       icon/userscript/<key>.tga - no path,
+                                       directory or traversal can be expressed.
   ui.show(id) / hide(id) / destroy(id)
   plus safe standard libs: string, table, math, coroutine, utf8
 
@@ -73,4 +92,5 @@ Notes:
 The server anti-cheat remains authoritative for all gameplay regardless of what
 client userscripts do.
 
-See hud_stats.lua for a worked example.
+See hud_stats.lua for a worked example, and equip_icons.lua for an
+equipment.* + ui.createIcon example (a small worn-gear icon HUD).

@@ -38,16 +38,20 @@
 
 struct lua_State;
 class CGraphicTextInstance;
+class CGraphicImageInstance;	// ELEMENTIA-USERSCRIPT: icon widget backing instance
 
 // ELEMENTIA-USERSCRIPT: kinds of on-screen widget a script can own.
 // TEXT is the original text overlay; RECT is a solid colour panel; BAR is a
 // two-layer progress bar (background + foreground scaled by a 0..1 fraction).
+// ICON renders a client-internal item icon (resolved from a vnum) or a curated,
+// whitelisted texture key - a script can NEVER hand in an arbitrary file path.
 // RECT/BAR are drawn from the 2D Grp primitives and need NO font resource.
 enum EUserScriptWidgetType
 {
 	USERSCRIPT_WIDGET_TEXT = 0,
 	USERSCRIPT_WIDGET_RECT,
 	USERSCRIPT_WIDGET_BAR,
+	USERSCRIPT_WIDGET_ICON,
 };
 
 // ELEMENTIA-USERSCRIPT: one entry in the throttled "nearby characters" snapshot.
@@ -84,6 +88,7 @@ struct SUserScriptWidget
 	int						iOwnerScript = -1;
 	int						iType = USERSCRIPT_WIDGET_TEXT;
 	CGraphicTextInstance*	pInstance = nullptr;	// TEXT only
+	CGraphicImageInstance*	pImage = nullptr;		// ICON only (pooled New/Delete)
 	float					fX = 0.0f;
 	float					fY = 0.0f;
 	float					fW = 0.0f;				// RECT/BAR size
@@ -170,6 +175,15 @@ class CUserScriptManager : public CSingleton<CUserScriptManager>
 		int   ApiCreateWidget(int iType);
 		SUserScriptWidget* GetWidget(int iId);
 		bool  WidgetOwnedByCurrent(int iId);
+
+		// ELEMENTIA-USERSCRIPT: icon widget resolution. BOTH paths are
+		// client-internal: a script may pass ONLY an item vnum (resolved through
+		// the client's own item-icon table) or a curated key that maps to a FIXED
+		// whitelisted resource path. A script can never supply a raw file path, so
+		// there is no filesystem escape / info-leak surface. Returns false on a
+		// rejected/unknown vnum or key (the icon is then left cleared).
+		bool  ApiSetWidgetIconVnum(SUserScriptWidget* pWidget, unsigned int dwVnum);
+		bool  ApiSetWidgetIconKey(SUserScriptWidget* pWidget, const char* c_szKey);
 
 		// Throttled logging helper (used by log.* bindings).
 		void  ApiLog(const char* c_szText, bool bWarn);

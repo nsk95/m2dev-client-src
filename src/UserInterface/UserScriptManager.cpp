@@ -29,7 +29,13 @@
 #include "EterBase/Debug.h"
 #include "EterLib/GrpText.h"
 #include "EterLib/GrpTextInstance.h"
+#include "EterLib/GrpImageInstance.h"		// ELEMENTIA-USERSCRIPT: icon widget instance
+#include "EterLib/GrpImage.h"				// ELEMENTIA-USERSCRIPT: CGraphicImage (curated key)
+#include "EterLib/GrpSubImage.h"			// ELEMENTIA-USERSCRIPT: item icon CGraphicSubImage upcast
+#include "EterLib/ResourceManager.h"		// ELEMENTIA-USERSCRIPT: curated icon resource load
 #include "EterPythonLib/PythonGraphic.h"	// ELEMENTIA-USERSCRIPT: 2D bar/rect widgets
+#include "GameLib/ItemManager.h"			// ELEMENTIA-USERSCRIPT: vnum -> item icon resolution
+#include "GameLib/ItemData.h"				// ELEMENTIA-USERSCRIPT: CItemData::GetIconImage()
 
 #include <cstdlib>
 #include <cstdio>
@@ -68,6 +74,17 @@ namespace
 	// --- nearby.* snapshot ---
 	constexpr double   kNearbyThrottleSec = 0.10;	// rebuild at most every 100ms
 	constexpr size_t   kNearbyMaxEntries  = 256;	// hard cap on snapshot size
+
+	// --- ui.createIcon curated-key resolution (see ApiSetWidgetIconKey) ---
+	// A curated key is a SHORT, strictly-validated leaf name ([a-z0-9_], max 32).
+	// It is composed into a FIXED internal path  <prefix><key><suffix>  that lives
+	// inside the client resource packs. The script supplies ONLY the leaf; it can
+	// never inject a directory, a traversal ("..") or an absolute path, so there is
+	// no way to read anything outside this one curated icon folder. Server owners
+	// curate the set simply by dropping <key>.tga icons into that pack folder.
+	const char* const  kIconKeyPrefix   = "icon/userscript/";
+	const char* const  kIconKeySuffix   = ".tga";
+	constexpr size_t   kIconKeyMaxLen   = 32;
 
 	// Tracks total bytes handed out so we can enforce kMemoryCapBytes.
 	struct SAllocState { size_t used = 0; };
@@ -173,6 +190,7 @@ void CUserScriptManager::Destroy()
 	for (SUserScriptWidget& w : m_widgets)
 	{
 		if (w.pInstance) { delete w.pInstance; w.pInstance = nullptr; }
+		if (w.pImage) { CGraphicImageInstance::Delete(w.pImage); w.pImage = nullptr; }
 	}
 	m_widgets.clear();
 	m_hooks.clear();
@@ -480,6 +498,18 @@ void CUserScriptManager::Render()
 				}
 				break;
 			}
+			case USERSCRIPT_WIDGET_ICON:
+			{
+				// Client-internal item/curated icon. Skip until an icon has been
+				// assigned (empty instance) so nothing spurious draws.
+				if (!w.pImage || w.pImage->IsEmpty())
+					continue;
+				w.pImage->SetPosition(w.fX, w.fY);
+				// fR/fG/fB/fA double as an optional tint (default white/opaque).
+				w.pImage->SetDiffuseColor(w.fR, w.fG, w.fB, w.fA);
+				w.pImage->Render();
+				break;
+			}
 			case USERSCRIPT_WIDGET_TEXT:
 			default:
 			{
@@ -548,6 +578,13 @@ int CUserScriptManager::ApiCreateWidget(int iType)
 		w.pInstance->SetTextPointer(pFont);
 		w.pInstance->SetValue("");
 	}
+	else if (iType == USERSCRIPT_WIDGET_ICON)
+	{
+		// Pooled image instance (same lifecycle the client uses for CImageBox).
+		w.pImage = CGraphicImageInstance::New();
+		if (!w.pImage)
+			return -2;	// pool not ready yet: transient, script may retry
+	}
 
 	m_widgets.push_back(w);
 	return (int)m_widgets.size() - 1;
@@ -564,6 +601,78 @@ bool CUserScriptManager::WidgetOwnedByCurrent(int iId)
 {
 	SUserScriptWidget* w = GetWidget(iId);
 	return w && w->iOwnerScript == m_iCurrentScript;
+}
+
+// ELEMENTIA-USERSCRIPT: point an ICON widget at a client-internal item icon.
+// The ONLY input from the script is an integer vnum; the icon image is looked up
+// through the client's own item table (CItemManager -> CItemData::GetIconImage),
+// exactly like the inventory UI does. There is no path, so nothing outside the
+// client's item packs can ever be addressed. vnum 0 clears the icon.
+bool CUserScriptManager::ApiSetWidgetIconVnum(SUserScriptWidget* pWidget, unsigned int dwVnum)
+{
+	if (!pWidget || pWidget->iType != USERSCRIPT_WIDGET_ICON || !pWidget->pImage)
+		return false;
+
+	if (dwVnum == 0)
+	{
+		pWidget->pImage->SetImagePointer(nullptr);	// clear -> renders as empty
+		return true;
+	}
+
+	CItemManager* pItemMgr = CItemManager::InstancePtr();
+	if (!pItemMgr)
+		return false;
+	CItemData* pItemData = nullptr;
+	if (!pItemMgr->GetItemDataPointer(dwVnum, &pItemData) || !pItemData)
+		return false;
+	CGraphicSubImage* pIcon = pItemData->GetIconImage();
+	if (!pIcon)
+		return false;
+
+	// CGraphicSubImage IS-A CGraphicImage; this is the same call the item UI uses.
+	pWidget->pImage->SetImagePointer(pIcon);
+	return true;
+}
+
+// ELEMENTIA-USERSCRIPT: point an ICON widget at a CURATED, whitelisted texture.
+// The script supplies only a short leaf key ([a-z0-9_], <=32). We compose a FIXED
+// internal path (kIconKeyPrefix + key + kIconKeySuffix) and load it through the
+// client resource manager (the eterpack VFS). Any character outside the strict
+// class - including '/', '\\', '.', ':' - is rejected, so no directory, no
+// traversal and no absolute/UNC path can be injected. A missing curated file
+// fails cleanly (returns false); it can never reach outside the curated folder.
+bool CUserScriptManager::ApiSetWidgetIconKey(SUserScriptWidget* pWidget, const char* c_szKey)
+{
+	if (!pWidget || pWidget->iType != USERSCRIPT_WIDGET_ICON || !pWidget->pImage)
+		return false;
+	if (!c_szKey)
+		return false;
+
+	// Strict leaf validation (defence-in-depth: reject BEFORE building any path).
+	size_t len = strlen(c_szKey);
+	if (len == 0 || len > kIconKeyMaxLen)
+		return false;
+	for (size_t i = 0; i < len; ++i)
+	{
+		char c = c_szKey[i];
+		bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+		if (!ok)
+			return false;	// anything else (/, \, ., :, .., spaces) is rejected
+	}
+
+	std::string path = kIconKeyPrefix;
+	path += c_szKey;
+	path += kIconKeySuffix;
+
+	// Must exist inside the packs and actually be an image resource.
+	if (!CResourceManager::Instance().IsFileExist(path.c_str()))
+		return false;
+	CResource* pResource = CResourceManager::Instance().GetResourcePointer(path.c_str());
+	if (!pResource || !pResource->IsType(CGraphicImage::Type()))
+		return false;
+
+	pWidget->pImage->SetImagePointer(static_cast<CGraphicImage*>(pResource));
+	return true;
 }
 
 void CUserScriptManager::ApiLog(const char* c_szText, bool bWarn)
@@ -677,6 +786,7 @@ void CUserScriptManager::ClearAllScripts()
 	for (SUserScriptWidget& w : m_widgets)
 	{
 		if (w.pInstance) { delete w.pInstance; w.pInstance = nullptr; }
+		if (w.pImage) { CGraphicImageInstance::Delete(w.pImage); w.pImage = nullptr; }
 	}
 
 	m_widgets.clear();

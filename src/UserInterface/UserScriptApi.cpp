@@ -398,6 +398,56 @@ static int l_inventory_countByVnum(lua_State* L)
 }
 
 // ---------------------------------------------------------------------------
+// equipment.*  - READ-ONLY view of the OWN character's worn gear. Same shape as
+// inventory.* but addresses the equip (wear) slots. No equip/unequip/move/use:
+// a script can only observe what the player is wearing, never change it, and it
+// can only ever see its OWN character (never another player's equipment).
+//
+// A slot argument is a wear-position index (equipment.slot.*); it is bounds-
+// checked against [0, c_Wear_Max) and composed into an EQUIPMENT TItemPos, so a
+// script can never index out of the item array.
+// ---------------------------------------------------------------------------
+static bool EquipSlotArg(lua_State* L, int arg, TItemPos* out)
+{
+	lua_Integer slot = luaL_checkinteger(L, arg);
+	if (slot < 0 || slot >= (lua_Integer)c_Wear_Max)
+		return false;
+	// Equip cells live in the same backing array as the inventory, offset by
+	// c_Equipment_Start; the EQUIPMENT window type resolves to it read-only.
+	*out = TItemPos(EQUIPMENT, (WORD)(c_Equipment_Start + slot));
+	return true;
+}
+static int l_equipment_slotCount(lua_State* L)
+{
+	lua_pushinteger(L, (lua_Integer)c_Wear_Max);
+	return 1;
+}
+static int l_equipment_getItemVnum(lua_State* L)
+{
+	TItemPos pos;
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !EquipSlotArg(L, 1, &pos)) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetItemIndex(pos));
+	return 1;
+}
+static int l_equipment_getItemCount(lua_State* L)
+{
+	TItemPos pos;
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !EquipSlotArg(L, 1, &pos)) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetItemCount(pos));
+	return 1;
+}
+static int l_equipment_isEmpty(lua_State* L)
+{
+	TItemPos pos;
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !EquipSlotArg(L, 1, &pos)) { lua_pushboolean(L, 1); return 1; }
+	lua_pushboolean(L, p->GetItemIndex(pos) == 0 ? 1 : 0);
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
 // buff.*  - READ-ONLY active-affect check on the main character. Boolean state
 // only (the client does not hold per-affect remaining time in C++; a HUD can
 // time buffs itself from the on/off transitions - see the buff_timer example).
@@ -557,6 +607,34 @@ static int l_ui_createRect(lua_State* L)
 static int l_ui_createBar(lua_State* L)
 {
 	return CreateWidgetOfType(L, USERSCRIPT_WIDGET_BAR, "ui.createBar");
+}
+static int l_ui_createIcon(lua_State* L)
+{
+	return CreateWidgetOfType(L, USERSCRIPT_WIDGET_ICON, "ui.createIcon");
+}
+// ui.setIcon(id, vnum) - show a client-internal ITEM icon (resolved from vnum).
+// vnum 0 clears the icon. There is NO path parameter anywhere: the only way to
+// choose an image is a vnum (item table) or a curated key (ui.setIconKey), so a
+// script can never point the widget at an arbitrary file.
+static int l_ui_setIcon(lua_State* L)
+{
+	SUserScriptWidget* w = nullptr;
+	RequireOwnedWidget(L, 1, &w);
+	lua_Integer vnum = luaL_checkinteger(L, 2);
+	if (vnum < 0) vnum = 0;
+	CUserScriptManager::Instance().ApiSetWidgetIconVnum(w, (unsigned int)vnum);
+	return 0;
+}
+// ui.setIconKey(id, key) - show a CURATED, whitelisted icon by short key name.
+// The key must be [a-z0-9_] (<=32); the C++ side maps it to a FIXED internal
+// resource path. No directory/traversal/absolute path can be expressed.
+static int l_ui_setIconKey(lua_State* L)
+{
+	SUserScriptWidget* w = nullptr;
+	RequireOwnedWidget(L, 1, &w);
+	const char* key = luaL_checkstring(L, 2);
+	CUserScriptManager::Instance().ApiSetWidgetIconKey(w, key);
+	return 0;
 }
 static int l_ui_setText(lua_State* L)
 {
@@ -806,7 +884,10 @@ void UserScript_PushSandboxEnv(lua_State* L)
 		{ "createText",   l_ui_createText },
 		{ "createRect",   l_ui_createRect },
 		{ "createBar",    l_ui_createBar },
+		{ "createIcon",   l_ui_createIcon },
 		{ "setText",      l_ui_setText },
+		{ "setIcon",      l_ui_setIcon },
+		{ "setIconKey",   l_ui_setIconKey },
 		{ "setPosition",  l_ui_setPosition },
 		{ "setColor",     l_ui_setColor },
 		{ "setSize",      l_ui_setSize },
@@ -850,6 +931,48 @@ void UserScript_PushSandboxEnv(lua_State* L)
 		{ nullptr, nullptr }
 	};
 	RegisterTable(L, "inventory", inventoryFuncs);
+
+	static const luaL_Reg equipmentFuncs[] = {
+		{ "slotCount",    l_equipment_slotCount },
+		{ "getItemVnum",  l_equipment_getItemVnum },
+		{ "getItemCount", l_equipment_getItemCount },
+		{ "isEmpty",      l_equipment_isEmpty },
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "equipment", equipmentFuncs);
+	// equipment.slot.* - named wear-position constants matching the client's real
+	// CItemData::EWearPositions. Read-only informational table.
+	lua_getfield(L, -1, "equipment");		// [.., env, equipment]
+	lua_newtable(L);						// [.., env, equipment, slot]
+	{
+		struct { const char* name; int id; } kWearSlots[] = {
+			{ "BODY",    CItemData::WEAR_BODY },
+			{ "HEAD",    CItemData::WEAR_HEAD },
+			{ "SHOES",   CItemData::WEAR_FOOTS },
+			{ "FOOTS",   CItemData::WEAR_FOOTS },
+			{ "WRIST",   CItemData::WEAR_WRIST },
+			{ "WEAPON",  CItemData::WEAR_WEAPON },
+			{ "NECK",    CItemData::WEAR_NECK },
+			{ "EAR",     CItemData::WEAR_EAR },
+			{ "UNIQUE1", CItemData::WEAR_UNIQUE1 },
+			{ "UNIQUE2", CItemData::WEAR_UNIQUE2 },
+			{ "ARROW",   CItemData::WEAR_ARROW },
+			{ "SHIELD",  CItemData::WEAR_SHIELD },
+			{ "RING1",   CItemData::WEAR_RING1 },
+			{ "RING2",   CItemData::WEAR_RING2 },
+			{ "BELT",    CItemData::WEAR_BELT },
+			{ "COSTUME_BODY",   CItemData::WEAR_COSTUME_BODY },
+			{ "COSTUME_HAIR",   CItemData::WEAR_COSTUME_HAIR },
+			{ "COSTUME_WEAPON", CItemData::WEAR_COSTUME_WEAPON },
+		};
+		for (const auto& s : kWearSlots)
+		{
+			lua_pushinteger(L, s.id);
+			lua_setfield(L, -2, s.name);
+		}
+	}
+	lua_setfield(L, -2, "slot");			// equipment.slot = {...}
+	lua_pop(L, 1);							// [.., env]
 
 	static const luaL_Reg buffFuncs[] = {
 		{ "has", l_buff_has },
@@ -913,8 +1036,9 @@ void UserScript_PushSandboxEnv(lua_State* L)
 
 	// elementia = { version = N, sandbox = true }  (read-only-ish info)
 	// v2: added target/nearby/inventory/buff/coord/time/config + rect/bar widgets.
+	// v3: added equipment.* (read-only worn gear) + ui.createIcon/setIcon/setIconKey.
 	lua_newtable(L);
-	lua_pushinteger(L, 2);
+	lua_pushinteger(L, 3);
 	lua_setfield(L, -2, "version");
 	lua_pushboolean(L, 1);
 	lua_setfield(L, -2, "sandbox");
