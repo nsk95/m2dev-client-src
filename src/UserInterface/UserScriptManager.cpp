@@ -36,6 +36,7 @@
 #include "EterPythonLib/PythonGraphic.h"	// ELEMENTIA-USERSCRIPT: 2D bar/rect widgets
 #include "GameLib/ItemManager.h"			// ELEMENTIA-USERSCRIPT: vnum -> item icon resolution
 #include "GameLib/ItemData.h"				// ELEMENTIA-USERSCRIPT: CItemData::GetIconImage()
+#include "AudioLib/SoundEngine.h"			// ELEMENTIA-USERSCRIPT: sound.play (curated 2D sfx)
 
 #include <cstdlib>
 #include <cstdio>
@@ -85,6 +86,23 @@ namespace
 	const char* const  kIconKeyPrefix   = "icon/userscript/";
 	const char* const  kIconKeySuffix   = ".tga";
 	constexpr size_t   kIconKeyMaxLen   = 32;
+
+	// --- sound.play curated-key resolution (see ApiPlaySound) ---
+	// Identical safety model to the icon key above: the script supplies ONLY a
+	// short leaf ([a-z0-9_], max 32) which is composed into a FIXED internal path
+	// <prefix><key><suffix> under one curated sound folder. No directory, traversal
+	// or absolute path can be expressed, so a script can never point the audio
+	// engine at an arbitrary file. Owners curate the set by dropping <key>.mp3
+	// files into that folder. A missing file simply no-ops.
+	const char* const  kSoundKeyPrefix  = "sound/userscript/";
+	const char* const  kSoundKeySuffix  = ".mp3";
+	constexpr size_t   kSoundKeyMaxLen  = 32;
+	constexpr double   kSoundMinInterval = 0.10;	// >=100ms between sounds per script
+
+	// --- read-only chat feed (see NotifyChat) ---
+	constexpr size_t   kChatLogMax      = 64;		// retained history lines
+	constexpr size_t   kChatPendingMax  = 64;		// lines queued for the "chat" event
+	constexpr size_t   kChatLineMaxLen  = 1024;		// per-line capture cap
 
 	// Tracks total bytes handed out so we can enforce kMemoryCapBytes.
 	struct SAllocState { size_t used = 0; };
@@ -384,6 +402,9 @@ void CUserScriptManager::Update(double dGlobalTime, double dElapsed)
 		DispatchEvent(USERSCRIPT_EVENT_SECOND, 0.0);
 	}
 
+	// Deliver any chat lines captured since the last pump to "chat" handlers.
+	DispatchChatEvents();
+
 	FireTimers();
 
 	// Persist any config.set() changes at most once per second (see ConfigSet).
@@ -427,6 +448,50 @@ void CUserScriptManager::DispatchEvent(int iEvent, double dArg)
 			lua_pop(L, 1);
 		}
 		m_iCurrentScript = -1;
+	}
+}
+
+// Drain the chat lines captured since the last pump into every "chat" handler.
+// Runs on the main thread from Update(), so it never races NotifyChat (which is
+// also main-thread). We snapshot-and-clear m_chatPending first so a handler that
+// itself emits chat (which NotifyChat ignores while a script is running anyway)
+// cannot grow the list we are iterating.
+void CUserScriptManager::DispatchChatEvents()
+{
+	lua_State* L = m_pLuaState;
+	if (!L || m_chatPending.empty())
+		return;
+
+	std::vector<SUserScriptChatLine> pending;
+	pending.swap(m_chatPending);
+
+	size_t hookCount = m_hooks.size();
+	for (const SUserScriptChatLine& line : pending)
+	{
+		for (size_t i = 0; i < hookCount && i < m_hooks.size(); ++i)
+		{
+			if (m_hooks[i].bDead || m_hooks[i].iEvent != USERSCRIPT_EVENT_CHAT)
+				continue;
+			int owner = m_hooks[i].iOwnerScript;
+			int cbRef = m_hooks[i].iCallbackRef;
+			if (!ScriptActive(owner))
+				continue;
+
+			lua_rawgeti(L, LUA_REGISTRYINDEX, cbRef);	// [fn]
+			lua_pushlstring(L, line.strText.data(), line.strText.size());
+			lua_pushinteger(L, (lua_Integer)line.iType);
+
+			m_iCurrentScript = owner;
+			ProtectedBegin();
+			int rc = lua_pcall(L, 2, 0, 0);
+			ProtectedEnd();
+			if (rc != LUA_OK)
+			{
+				FaultCurrentScript("chat handler", lua_tostring(L, -1));
+				lua_pop(L, 1);
+			}
+			m_iCurrentScript = -1;
+		}
 	}
 }
 
@@ -795,6 +860,152 @@ void CUserScriptManager::ApiLog(const char* c_szText, bool bWarn)
 }
 
 // ---------------------------------------------------------------------------
+// SAFE client-local writes (chat.print / sound.play)
+//
+// Both are OUTPUT-ONLY: they render text / play audio on the local machine and
+// do NOT send anything to the server or influence gameplay in any way, so they
+// cannot be turned into an automation or advantage. See UserScriptApi.cpp for
+// the full per-feature abuse analysis.
+// ---------------------------------------------------------------------------
+
+// chat.print(text): append ONE line to the player's OWN chat window. This is a
+// pure local render (the same AppendChat the client uses for its own INFO msgs);
+// it is NEVER transmitted to the server or other players. The line is SOURCE-
+// TAGGED with the addon name so a script cannot forge a system/GM/other-player
+// message (anti-deception), and it shares log.info's per-script rate limit so a
+// runaway loop cannot spam the window.
+void CUserScriptManager::ApiChatPrint(const char* c_szText)
+{
+	if (!c_szText)
+		return;
+
+	// Per-script rate limit (mirrors ApiLog's throttle exactly).
+	if (m_iCurrentScript >= 0 && m_iCurrentScript < (int)m_scripts.size())
+	{
+		SUserScript& sc = m_scripts[m_iCurrentScript];
+		if (m_dGlobalTime - sc.dLogWindowStart >= 1.0)
+		{
+			sc.dLogWindowStart = m_dGlobalTime;
+			sc.iLogBudget = kLogLinesPerSec;
+		}
+		if (sc.iLogBudget <= 0)
+			return;
+		sc.iLogBudget--;
+	}
+
+	const char* scriptName =
+		(m_iCurrentScript >= 0 && m_iCurrentScript < (int)m_scripts.size())
+		? m_scripts[m_iCurrentScript].strName.c_str() : "?";
+
+	char line[1024];
+	_snprintf(line, sizeof(line), "[addon:%s] %s", scriptName, c_szText);
+	line[sizeof(line) - 1] = '\0';
+
+	if (CPythonChat::InstancePtr())
+		CPythonChat::Instance().AppendChat(CHAT_TYPE_INFO, line);
+	// NB: because m_iCurrentScript >= 0 here, the resulting AppendChat is ignored
+	// by NotifyChat (see below), so a script's own chat.print can never feed back
+	// into the read-only chat feed or re-trigger the "chat" event.
+}
+
+// sound.play(key): play ONE curated client sound. The key is a short leaf that
+// maps to a FIXED internal resource path (kSoundKeyPrefix<key>kSoundKeySuffix) -
+// no path/traversal/absolute path can be expressed, exactly like ui.setIconKey.
+// Per-script rate-limited so it cannot machine-gun the audio engine. Playing a
+// sound is output-only and confers no gameplay ability, so it is not an
+// automation/advantage vector. Returns false on a rejected key / throttle.
+bool CUserScriptManager::ApiPlaySound(const char* c_szKey)
+{
+	if (!c_szKey)
+		return false;
+
+	// Strict leaf validation BEFORE building any path (defence-in-depth).
+	size_t len = strlen(c_szKey);
+	if (len == 0 || len > kSoundKeyMaxLen)
+		return false;
+	for (size_t i = 0; i < len; ++i)
+	{
+		char c = c_szKey[i];
+		bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+		if (!ok)
+			return false;	// anything else (/, \, ., :, .., spaces) is rejected
+	}
+
+	// Per-script minimum interval between sounds.
+	if (m_iCurrentScript >= 0 && m_iCurrentScript < (int)m_scripts.size())
+	{
+		SUserScript& sc = m_scripts[m_iCurrentScript];
+		if (sc.dLastSoundTime >= 0.0 &&
+			(m_dGlobalTime - sc.dLastSoundTime) < kSoundMinInterval)
+			return false;
+		sc.dLastSoundTime = m_dGlobalTime;
+	}
+
+	if (!SoundEngine::InstancePtr())
+		return false;					// audio not up yet: nothing to do
+
+	std::string path = kSoundKeyPrefix;
+	path += c_szKey;
+	path += kSoundKeySuffix;
+
+	// A missing curated file simply no-ops inside the engine; it can never reach
+	// outside the curated folder because of the strict leaf validation above.
+	SoundEngine::Instance().PlaySound2D(path);
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Read-only chat-window feed (chat.getLine / chat.count / event.on("chat"))
+// ---------------------------------------------------------------------------
+
+// Capture a line that was just shown in the client's chat window. Called from
+// CPythonChat::AppendChat. We deliberately IGNORE lines emitted while a
+// userscript is on the call stack (m_iCurrentScript >= 0): that both prevents a
+// feedback loop (a "chat" handler that calls chat.print/log.info would otherwise
+// re-enqueue itself forever) and keeps the feed to genuine game/other-player
+// chat rather than addon output. Both buffers are hard-capped so a chat flood
+// cannot grow client memory without bound.
+void CUserScriptManager::NotifyChat(int iType, const char* c_szText)
+{
+	if (!c_szText || !m_pLuaState)
+		return;
+	if (m_iCurrentScript >= 0)			// skip anything a userscript itself emitted
+		return;
+
+	SUserScriptChatLine e;
+	e.iType = iType;
+	e.strText.assign(c_szText);
+	if (e.strText.size() > kChatLineMaxLen)
+		e.strText.resize(kChatLineMaxLen);
+
+	m_chatLog.push_back(e);
+	while (m_chatLog.size() > kChatLogMax)
+		m_chatLog.pop_front();
+
+	// Only queue for the "chat" event if some script actually subscribed, so a
+	// chat flood with no listeners cannot balloon the pending vector.
+	bool bHasListener = false;
+	for (const SUserScriptHook& h : m_hooks)
+		if (!h.bDead && h.iEvent == USERSCRIPT_EVENT_CHAT) { bHasListener = true; break; }
+	if (bHasListener)
+	{
+		m_chatPending.push_back(std::move(e));
+		if (m_chatPending.size() > kChatPendingMax)
+			m_chatPending.erase(m_chatPending.begin(),
+				m_chatPending.begin() + (m_chatPending.size() - kChatPendingMax));
+	}
+}
+
+bool CUserScriptManager::ChatLine(int iIdx, std::string& strOut, int& iTypeOut) const
+{
+	if (iIdx < 0 || iIdx >= (int)m_chatLog.size())
+		return false;
+	strOut   = m_chatLog[iIdx].strText;
+	iTypeOut = m_chatLog[iIdx].iType;
+	return true;
+}
+
+// ---------------------------------------------------------------------------
 // Script activation / addon-manager surface
 // ---------------------------------------------------------------------------
 bool CUserScriptManager::ScriptActive(int iIdx) const
@@ -886,6 +1097,9 @@ void CUserScriptManager::ClearAllScripts()
 	m_iCurrentScript = -1;
 	m_nearby.clear();
 	m_dNearbyStamp = -1.0;
+	// Drop chat lines queued for the (now-gone) "chat" handlers; the read-only
+	// history ring is client-global and harmless to keep across a reload.
+	m_chatPending.clear();
 }
 
 void CUserScriptManager::ReloadScripts()

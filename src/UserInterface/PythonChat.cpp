@@ -3,6 +3,7 @@
 
 #include "AbstractApplication.h"
 #include "PythonCharacterManager.h"
+#include "UserScriptManager.h"		// ELEMENTIA-USERSCRIPT: read-only chat feed capture
 #include "EterBase/Timer.h"
 
 #include <utf8.h>
@@ -484,6 +485,14 @@ void CPythonChat::ArrangeShowingChat(DWORD dwID)
 
 void CPythonChat::AppendChat(int iType, const char * c_szChat)
 {
+	// ELEMENTIA-USERSCRIPT: mirror the line into the sandbox's read-only chat feed
+	// (chat.getLine / event.on("chat")). This is a pure observe-only capture of the
+	// text already destined for the player's own chat window; NotifyChat itself
+	// ignores anything a userscript emitted, so a script's own output cannot feed
+	// back. Guarded on the singleton being up (it may not be during early boot).
+	if (c_szChat && CUserScriptManager::InstancePtr())
+		CUserScriptManager::Instance().NotifyChat(iType, c_szChat);
+
 	// DEFAULT_FONT
 	//static CResource * s_pResource = CResourceManager::Instance().GetResourcePointer(g_strDefaultFontName.c_str());
 

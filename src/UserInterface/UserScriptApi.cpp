@@ -34,6 +34,8 @@
 #include "PythonChat.h"
 #include "PythonBackground.h"		// map.getName() (read-only current map name)
 #include "PythonQuest.h"			// quest.* (read-only active-quest readout)
+#include "PythonGuild.h"			// guild.* (read-only OWN-guild roster)
+#include "PythonShop.h"			// shop.* (read-only currently-open shop listing)
 #include "Packet.h"			// EChatType, EPointTypes
 #include "GameType.h"		// TItemPos / inventory slot constants
 
@@ -165,6 +167,20 @@ static int l_player_getDX(lua_State* L)          { return PlayerStatus(L, POINT_
 static int l_player_getIQ(lua_State* L)          { return PlayerStatus(L, POINT_IQ); }
 static int l_player_getAttackPower(lua_State* L) { return PlayerStatus(L, POINT_ATT_POWER); }
 static int l_player_getDefense(lua_State* L)     { return PlayerStatus(L, POINT_DEF_GRADE); }
+// player.getPoint(id) -> value : generic READ-ONLY access to any local status
+// point (resistances, element attack bonuses, block/dodge/crit, etc.). The id is
+// bounds-checked here against POINT_MAX_NUM AND again inside CPythonPlayer::
+// GetStatus, so a script-supplied index can never read out of the status array.
+// This is exactly the block the client keeps for its own status window; there is
+// no setter. player.point.* exposes curated named constants for common ids.
+static int l_player_getPoint(lua_State* L)
+{
+	lua_Integer id = luaL_checkinteger(L, 1);
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || id < 0 || id >= (lua_Integer)POINT_MAX_NUM) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetStatus((unsigned int)id));
+	return 1;
+}
 
 // ---------------------------------------------------------------------------
 // map.*  - READ-ONLY current map name. The client already stores the active
@@ -652,6 +668,255 @@ static int l_equipment_isEmpty(lua_State* L)
 }
 
 // ---------------------------------------------------------------------------
+// Item metadata (sockets / attributes / flags) - READ-ONLY, for the OWN bag &
+// worn gear only. This is the local per-item data the client already keeps for
+// its own tooltip; surfacing it lets addons do things like an equip-vs-inventory
+// comparison. Still no move/use/equip: purely descriptive. Both the slot index
+// and the socket/attr sub-index are bounds-checked (the sub-index inside
+// CPythonPlayer against ITEM_SOCKET_SLOT_MAX_NUM / ITEM_ATTRIBUTE_SLOT_MAX_NUM).
+// Two resolvers reuse the existing INVENTORY/EQUIPMENT slot validators.
+// ---------------------------------------------------------------------------
+static int ItemMetinSocket(lua_State* L, bool bEquip)
+{
+	TItemPos pos;
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	bool ok = bEquip ? EquipSlotArg(L, 1, &pos) : InvSlotArg(L, 1, &pos);
+	lua_Integer socketIdx = luaL_checkinteger(L, 2);
+	if (!p || !ok || socketIdx < 0) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetItemMetinSocket(pos, (DWORD)socketIdx));
+	return 1;
+}
+static int ItemAttribute(lua_State* L, bool bEquip)
+{
+	TItemPos pos;
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	bool ok = bEquip ? EquipSlotArg(L, 1, &pos) : InvSlotArg(L, 1, &pos);
+	lua_Integer attrIdx = luaL_checkinteger(L, 2);
+	if (!p || !ok || attrIdx < 0) { lua_pushinteger(L, 0); lua_pushinteger(L, 0); return 2; }
+	BYTE byType = 0; short sValue = 0;
+	p->GetItemAttribute(pos, (DWORD)attrIdx, &byType, &sValue);
+	lua_pushinteger(L, (lua_Integer)byType);
+	lua_pushinteger(L, (lua_Integer)sValue);
+	return 2;	// type, value
+}
+static int ItemFlags(lua_State* L, bool bEquip)
+{
+	TItemPos pos;
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	bool ok = bEquip ? EquipSlotArg(L, 1, &pos) : InvSlotArg(L, 1, &pos);
+	if (!p || !ok) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetItemFlags(pos));
+	return 1;
+}
+static int l_inventory_getMetinSocket(lua_State* L) { return ItemMetinSocket(L, false); }
+static int l_inventory_getAttribute(lua_State* L)   { return ItemAttribute(L, false); }
+static int l_inventory_getFlags(lua_State* L)       { return ItemFlags(L, false); }
+static int l_equipment_getMetinSocket(lua_State* L) { return ItemMetinSocket(L, true); }
+static int l_equipment_getAttribute(lua_State* L)   { return ItemAttribute(L, true); }
+static int l_equipment_getFlags(lua_State* L)       { return ItemFlags(L, true); }
+
+// ---------------------------------------------------------------------------
+// guild.*  - READ-ONLY view of the player's OWN guild (the same data the client
+// keeps for its guild window). Name/level/member roster only; there is NO invite/
+// kick/withdraw/grade mutation and it is explicitly your own guild, not an
+// arbitrary other guild. Member index is bounds-checked via GetMemberDataPtr.
+// ---------------------------------------------------------------------------
+static CPythonGuild::TGuildMemberData* ResolveGuildMember(int idx)
+{
+	CPythonGuild* g = CPythonGuild::InstancePtr();
+	if (!g || !g->IsGuildEnable() || idx < 0)
+		return nullptr;
+	CPythonGuild::TGuildMemberData* pData = nullptr;
+	if (!g->GetMemberDataPtr((DWORD)idx, &pData))
+		return nullptr;
+	return pData;
+}
+static int l_guild_exists(lua_State* L)
+{
+	CPythonGuild* g = CPythonGuild::InstancePtr();
+	lua_pushboolean(L, (g && g->IsGuildEnable()) ? 1 : 0);
+	return 1;
+}
+static int l_guild_getName(lua_State* L)
+{
+	CPythonGuild* g = CPythonGuild::InstancePtr();
+	if (!g || !g->IsGuildEnable()) { lua_pushstring(L, ""); return 1; }
+	lua_pushstring(L, g->GetGuildInfoRef().szGuildName);
+	return 1;
+}
+static int l_guild_getLevel(lua_State* L)
+{
+	CPythonGuild* g = CPythonGuild::InstancePtr();
+	lua_pushinteger(L, (g && g->IsGuildEnable()) ? (lua_Integer)g->GetGuildInfoRef().dwGuildLevel : 0);
+	return 1;
+}
+static int l_guild_memberCount(lua_State* L)
+{
+	CPythonGuild* g = CPythonGuild::InstancePtr();
+	lua_pushinteger(L, (g && g->IsGuildEnable()) ? (lua_Integer)g->GetMemberCount() : 0);
+	return 1;
+}
+static int l_guild_maxMemberCount(lua_State* L)
+{
+	CPythonGuild* g = CPythonGuild::InstancePtr();
+	lua_pushinteger(L, (g && g->IsGuildEnable()) ? (lua_Integer)g->GetGuildInfoRef().dwMaxMemberCount : 0);
+	return 1;
+}
+static int l_guild_getMemberName(lua_State* L)
+{
+	CPythonGuild::TGuildMemberData* m = ResolveGuildMember((int)luaL_checkinteger(L, 1));
+	lua_pushstring(L, m ? m->strName.c_str() : "");
+	return 1;
+}
+static int l_guild_getMemberLevel(lua_State* L)
+{
+	CPythonGuild::TGuildMemberData* m = ResolveGuildMember((int)luaL_checkinteger(L, 1));
+	lua_pushinteger(L, m ? (lua_Integer)m->byLevel : 0);
+	return 1;
+}
+static int l_guild_getMemberGrade(lua_State* L)
+{
+	CPythonGuild::TGuildMemberData* m = ResolveGuildMember((int)luaL_checkinteger(L, 1));
+	lua_pushinteger(L, m ? (lua_Integer)m->byGrade : 0);
+	return 1;
+}
+static int l_guild_getMemberJob(lua_State* L)
+{
+	CPythonGuild::TGuildMemberData* m = ResolveGuildMember((int)luaL_checkinteger(L, 1));
+	lua_pushinteger(L, m ? (lua_Integer)m->byJob : 0);
+	return 1;
+}
+// guild.isMemberOnline(i) -> bool : the low bit of the general flag the client
+// uses to grey out offline members in its own guild window. Read-only.
+static int l_guild_isMemberOnline(lua_State* L)
+{
+	CPythonGuild::TGuildMemberData* m = ResolveGuildMember((int)luaL_checkinteger(L, 1));
+	lua_pushboolean(L, (m && (m->byGeneralFlag & 1)) ? 1 : 0);
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
+// shop.*  - READ-ONLY listing of the shop the player currently has OPEN (NPC or
+// private shop). This is only the item/price data the client already received to
+// draw the shop window; it exists only while a shop is open. There is NO buy/
+// sell/withdraw here - a script can read what is on offer but cannot transact,
+// so it cannot become an auto-buyer. Slots are addressed flat and bounds-checked.
+// ---------------------------------------------------------------------------
+static int l_shop_isOpen(lua_State* L)
+{
+	CPythonShop* s = CPythonShop::InstancePtr();
+	lua_pushboolean(L, (s && s->IsOpen()) ? 1 : 0);
+	return 1;
+}
+static int l_shop_isPrivate(lua_State* L)
+{
+	CPythonShop* s = CPythonShop::InstancePtr();
+	lua_pushboolean(L, (s && s->IsOpen() && s->IsPrivateShop()) ? 1 : 0);
+	return 1;
+}
+static int l_shop_isMine(lua_State* L)
+{
+	CPythonShop* s = CPythonShop::InstancePtr();
+	lua_pushboolean(L, (s && s->IsOpen() && s->IsMainPlayerPrivateShop()) ? 1 : 0);
+	return 1;
+}
+static int l_shop_tabCount(lua_State* L)
+{
+	CPythonShop* s = CPythonShop::InstancePtr();
+	lua_pushinteger(L, (s && s->IsOpen()) ? (lua_Integer)s->GetTabCount() : 0);
+	return 1;
+}
+static int l_shop_slotCount(lua_State* L)
+{
+	CPythonShop* s = CPythonShop::InstancePtr();
+	// Flat slot space = tabCount * per-tab slots; 0 when no shop is open.
+	int tabs = (s && s->IsOpen()) ? (int)s->GetTabCount() : 0;
+	if (tabs < 0) tabs = 0;
+	lua_pushinteger(L, (lua_Integer)tabs * (lua_Integer)SHOP_HOST_ITEM_MAX_NUM);
+	return 1;
+}
+// Resolve a flat slot index to the shop item record (nullptr when out of range
+// or no shop open). GetItemData(dwIndex) bounds-checks tab and slot internally.
+static const TShopItemData* ResolveShopItem(int idx)
+{
+	CPythonShop* s = CPythonShop::InstancePtr();
+	if (!s || !s->IsOpen() || idx < 0)
+		return nullptr;
+	const TShopItemData* pData = nullptr;
+	if (!s->GetItemData((DWORD)idx, &pData) || !pData)
+		return nullptr;
+	return pData;
+}
+static int l_shop_getItemVnum(lua_State* L)
+{
+	const TShopItemData* d = ResolveShopItem((int)luaL_checkinteger(L, 1));
+	lua_pushinteger(L, d ? (lua_Integer)d->vnum : 0);
+	return 1;
+}
+static int l_shop_getItemPrice(lua_State* L)
+{
+	const TShopItemData* d = ResolveShopItem((int)luaL_checkinteger(L, 1));
+	lua_pushinteger(L, d ? (lua_Integer)d->price : 0);
+	return 1;
+}
+static int l_shop_getItemCount(lua_State* L)
+{
+	const TShopItemData* d = ResolveShopItem((int)luaL_checkinteger(L, 1));
+	lua_pushinteger(L, d ? (lua_Integer)d->count : 0);
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
+// chat.*  - READ-ONLY view of the last lines shown in the player's OWN chat
+// window, plus chat.print (a SAFE, local-only write - see the manager for the
+// abuse analysis). event.on("chat", fn) fires fn(text, type) for each new line.
+// There is NO chat SEND here: a script can observe the chat window and echo a
+// local note into it, but can never transmit to the server or other players.
+// ---------------------------------------------------------------------------
+static int l_chat_count(lua_State* L)
+{
+	lua_pushinteger(L, (lua_Integer)CUserScriptManager::Instance().ChatLineCount());
+	return 1;
+}
+// chat.getLine(i) -> text, type   (i = 0 is the OLDEST retained line)
+static int l_chat_getLine(lua_State* L)
+{
+	int idx = (int)luaL_checkinteger(L, 1);
+	std::string text; int type = 0;
+	if (CUserScriptManager::Instance().ChatLine(idx, text, type))
+	{
+		lua_pushlstring(L, text.data(), text.size());
+		lua_pushinteger(L, (lua_Integer)type);
+	}
+	else
+	{
+		lua_pushstring(L, "");
+		lua_pushinteger(L, 0);
+	}
+	return 2;
+}
+// chat.print(text) - append ONE line to the LOCAL chat window (never sent).
+static int l_chat_print(lua_State* L)
+{
+	const char* msg = luaL_checkstring(L, 1);
+	CUserScriptManager::Instance().ApiChatPrint(msg);
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
+// sound.*  - SAFE local audio alert. sound.play(key) plays ONE curated client
+// sound (key -> FIXED internal path; no path injection); output-only, rate-
+// limited, no gameplay effect. Returns true if it was accepted (not throttled/
+// rejected). See the manager for the full abuse analysis.
+// ---------------------------------------------------------------------------
+static int l_sound_play(lua_State* L)
+{
+	const char* key = luaL_checkstring(L, 1);
+	lua_pushboolean(L, CUserScriptManager::Instance().ApiPlaySound(key) ? 1 : 0);
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
 // buff.*  - READ-ONLY active-affect check on the main character. Boolean state
 // only (the client does not hold per-affect remaining time in C++; a HUD can
 // time buffs itself from the on/off transitions - see the buff_timer example).
@@ -743,6 +1008,7 @@ static int l_event_on(lua_State* L)
 	int ev = -1;
 	if      (strcmp(name, "update") == 0) ev = USERSCRIPT_EVENT_UPDATE;
 	else if (strcmp(name, "second") == 0) ev = USERSCRIPT_EVENT_SECOND;
+	else if (strcmp(name, "chat") == 0)   ev = USERSCRIPT_EVENT_CHAT;
 	else return luaL_error(L, "event.on: unknown event '%s'", name);
 
 	lua_pushvalue(L, 2);						// dup the function
@@ -1114,9 +1380,58 @@ void UserScript_PushSandboxEnv(lua_State* L)
 		{ "getIQ",          l_player_getIQ },
 		{ "getAttackPower", l_player_getAttackPower },
 		{ "getDefense",     l_player_getDefense },
+		{ "getPoint",       l_player_getPoint },
 		{ nullptr, nullptr }
 	};
 	RegisterTable(L, "player", playerFuncs);
+	// player.point.* - curated named status-point ids for player.getPoint(). These
+	// are the same POINT_* the client's own status window uses; read-only table.
+	lua_getfield(L, -1, "player");			// [.., env, player]
+	lua_newtable(L);						// [.., env, player, point]
+	{
+		struct { const char* name; int id; } kPoints[] = {
+			{ "MAX_HP",           POINT_MAX_HP },
+			{ "MAX_SP",           POINT_MAX_SP },
+			{ "MAGIC_ATT",        POINT_MAGIC_ATT_GRADE },
+			{ "BLOCK",            POINT_BLOCK },
+			{ "DODGE",            POINT_DODGE },
+			{ "STEAL_HP",         POINT_STEAL_HP },
+			{ "STEAL_SP",         POINT_STEAL_SP },
+			{ "MANA_BURN_PCT",    POINT_MANA_BURN_PCT },
+			{ "RESIST_SWORD",     POINT_RESIST_SWORD },
+			{ "RESIST_TWOHAND",   POINT_RESIST_TWOHAND },
+			{ "RESIST_DAGGER",    POINT_RESIST_DAGGER },
+			{ "RESIST_BELL",      POINT_RESIST_BELL },
+			{ "RESIST_FAN",       POINT_RESIST_FAN },
+			{ "RESIST_BOW",       POINT_RESIST_BOW },
+			{ "RESIST_FIRE",      POINT_RESIST_FIRE },
+			{ "RESIST_ELEC",      POINT_RESIST_ELEC },
+			{ "RESIST_MAGIC",     POINT_RESIST_MAGIC },
+			{ "RESIST_WIND",      POINT_RESIST_WIND },
+			{ "ATTBONUS_HUMAN",   POINT_ATTBONUS_HUMAN },
+			{ "ATTBONUS_ANIMAL",  POINT_ATTBONUS_ANIMAL },
+			{ "ATTBONUS_ORC",     POINT_ATTBONUS_ORC },
+			{ "ATTBONUS_MILGYO",  POINT_ATTBONUS_MILGYO },
+			{ "ATTBONUS_UNDEAD",  POINT_ATTBONUS_UNDEAD },
+			{ "ATTBONUS_DEVIL",   POINT_ATTBONUS_DEVIL },
+			{ "ATTBONUS_INSECT",  POINT_ATTBONUS_INSECT },
+			{ "ATTBONUS_FIRE",    POINT_ATTBONUS_FIRE },
+			{ "ATTBONUS_ICE",     POINT_ATTBONUS_ICE },
+			{ "ATTBONUS_DESERT",  POINT_ATTBONUS_DESERT },
+			{ "CRITICAL_PCT",     POINT_CRITICAL_PCT },
+			{ "PENETRATE_PCT",    POINT_PENETRATE_PCT },
+			{ "EXP_BONUS",        POINT_EXP_DOUBLE_BONUS },
+			{ "ITEM_DROP_BONUS",  POINT_ITEM_DROP_BONUS },
+			{ "GOLD_BONUS",       POINT_GOLD_DOUBLE_BONUS },
+		};
+		for (const auto& e : kPoints)
+		{
+			lua_pushinteger(L, e.id);
+			lua_setfield(L, -2, e.name);
+		}
+	}
+	lua_setfield(L, -2, "point");			// player.point = {...}
+	lua_pop(L, 1);							// [.., env]
 
 	static const luaL_Reg eventFuncs[] = {
 		{ "on", l_event_on }, { nullptr, nullptr }
@@ -1175,20 +1490,26 @@ void UserScript_PushSandboxEnv(lua_State* L)
 	RegisterTable(L, "nearby", nearbyFuncs);
 
 	static const luaL_Reg inventoryFuncs[] = {
-		{ "slotCount",    l_inventory_slotCount },
-		{ "getItemVnum",  l_inventory_getItemVnum },
-		{ "getItemCount", l_inventory_getItemCount },
-		{ "isEmpty",      l_inventory_isEmpty },
-		{ "countByVnum",  l_inventory_countByVnum },
+		{ "slotCount",     l_inventory_slotCount },
+		{ "getItemVnum",   l_inventory_getItemVnum },
+		{ "getItemCount",  l_inventory_getItemCount },
+		{ "isEmpty",       l_inventory_isEmpty },
+		{ "countByVnum",   l_inventory_countByVnum },
+		{ "getMetinSocket",l_inventory_getMetinSocket },
+		{ "getAttribute",  l_inventory_getAttribute },
+		{ "getFlags",      l_inventory_getFlags },
 		{ nullptr, nullptr }
 	};
 	RegisterTable(L, "inventory", inventoryFuncs);
 
 	static const luaL_Reg equipmentFuncs[] = {
-		{ "slotCount",    l_equipment_slotCount },
-		{ "getItemVnum",  l_equipment_getItemVnum },
-		{ "getItemCount", l_equipment_getItemCount },
-		{ "isEmpty",      l_equipment_isEmpty },
+		{ "slotCount",     l_equipment_slotCount },
+		{ "getItemVnum",   l_equipment_getItemVnum },
+		{ "getItemCount",  l_equipment_getItemCount },
+		{ "isEmpty",       l_equipment_isEmpty },
+		{ "getMetinSocket",l_equipment_getMetinSocket },
+		{ "getAttribute",  l_equipment_getAttribute },
+		{ "getFlags",      l_equipment_getFlags },
 		{ nullptr, nullptr }
 	};
 	RegisterTable(L, "equipment", equipmentFuncs);
@@ -1324,14 +1645,61 @@ void UserScript_PushSandboxEnv(lua_State* L)
 	};
 	RegisterTable(L, "quest", questFuncs);
 
+	static const luaL_Reg guildFuncs[] = {
+		{ "exists",          l_guild_exists },
+		{ "getName",         l_guild_getName },
+		{ "getLevel",        l_guild_getLevel },
+		{ "memberCount",     l_guild_memberCount },
+		{ "maxMemberCount",  l_guild_maxMemberCount },
+		{ "getMemberName",   l_guild_getMemberName },
+		{ "getMemberLevel",  l_guild_getMemberLevel },
+		{ "getMemberGrade",  l_guild_getMemberGrade },
+		{ "getMemberJob",    l_guild_getMemberJob },
+		{ "isMemberOnline",  l_guild_isMemberOnline },
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "guild", guildFuncs);
+
+	static const luaL_Reg shopFuncs[] = {
+		{ "isOpen",        l_shop_isOpen },
+		{ "isPrivate",     l_shop_isPrivate },
+		{ "isMine",        l_shop_isMine },
+		{ "tabCount",      l_shop_tabCount },
+		{ "slotCount",     l_shop_slotCount },
+		{ "getItemVnum",   l_shop_getItemVnum },
+		{ "getItemPrice",  l_shop_getItemPrice },
+		{ "getItemCount",  l_shop_getItemCount },
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "shop", shopFuncs);
+
+	static const luaL_Reg chatFuncs[] = {
+		{ "count",   l_chat_count },
+		{ "getLine", l_chat_getLine },
+		{ "print",   l_chat_print },		// SAFE local-only write (never sent)
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "chat", chatFuncs);
+
+	static const luaL_Reg soundFuncs[] = {
+		{ "play", l_sound_play },			// SAFE curated local sound alert
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "sound", soundFuncs);
+
 	// elementia = { version = N, sandbox = true }  (read-only-ish info)
 	// v2: added target/nearby/inventory/buff/coord/time/config + rect/bar widgets.
 	// v3: added equipment.* (read-only worn gear) + ui.createIcon/setIcon/setIconKey.
 	// v4: added player exp/stamina/stat getters, map.*, skill.* (read-only cooldowns),
 	//     party.* (own-party roster), quest.* (active-quest readout) + ui.createLine/
 	//     createPanel/setLine/setLayer widgets.
+	// v5: added player.getPoint + player.point.* (resist/element/etc.), inventory/
+	//     equipment metin-socket/attribute/flags reads, guild.* (own-guild roster),
+	//     shop.* (open-shop listing), chat.* read + event.on("chat"). First SAFE
+	//     client-local WRITES: chat.print (local echo, never sent) and sound.play
+	//     (curated local sfx). Still NO server action / gameplay write of any kind.
 	lua_newtable(L);
-	lua_pushinteger(L, 4);
+	lua_pushinteger(L, 5);
 	lua_setfield(L, -2, "version");
 	lua_pushboolean(L, 1);
 	lua_setfield(L, -2, "sandbox");

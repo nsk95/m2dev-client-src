@@ -62,6 +62,45 @@ What you can use (curated, sandboxed API - ALL gameplay reads are READ-ONLY):
     .NECK / .EAR / .UNIQUE1 / .UNIQUE2 / .ARROW / .RING1 / .RING2 / .BELT /
     .COSTUME_BODY / .COSTUME_HAIR / .COSTUME_WEAPON   wear-position constants
 
+  inventory.getMetinSocket(slot, i)    READ-ONLY item metadata (for equip-vs-bag
+  inventory.getAttribute(slot, i)        comparisons etc.). i is bounds-checked.
+    -> type, value                       getAttribute returns (type, value);
+  inventory.getFlags(slot) -> flags      getMetinSocket/getFlags return a number.
+  equipment.getMetinSocket(slot, i)      Same three getters for worn gear.
+  equipment.getAttribute(slot, i) -> type, value
+  equipment.getFlags(slot) -> flags      (all READ-ONLY; no move/use/equip)
+
+  player.getPoint(id) -> value         READ-ONLY generic status point (bounds-
+                                       checked). Use player.point.* constants:
+  player.point.RESIST_FIRE / .RESIST_ELEC / .RESIST_MAGIC / .RESIST_WIND /
+    .RESIST_SWORD / .RESIST_TWOHAND / .RESIST_DAGGER / .RESIST_BELL / .RESIST_FAN /
+    .RESIST_BOW / .ATTBONUS_HUMAN / .ATTBONUS_ANIMAL / .ATTBONUS_ORC /
+    .ATTBONUS_MILGYO / .ATTBONUS_UNDEAD / .ATTBONUS_DEVIL / .ATTBONUS_INSECT /
+    .ATTBONUS_FIRE / .ATTBONUS_ICE / .ATTBONUS_DESERT / .CRITICAL_PCT /
+    .PENETRATE_PCT / .BLOCK / .DODGE / .STEAL_HP / .STEAL_SP / .MANA_BURN_PCT /
+    .MAGIC_ATT / .MAX_HP / .MAX_SP / .EXP_BONUS / .ITEM_DROP_BONUS / .GOLD_BONUS
+
+  guild.exists() -> bool               READ-ONLY view of YOUR OWN guild only
+  guild.getName() -> string            (no invite/kick/withdraw/grade API)
+  guild.getLevel() -> n
+  guild.memberCount() / maxMemberCount() -> n
+  guild.getMemberName(i) -> string     i = 0 .. memberCount-1
+  guild.getMemberLevel(i) / getMemberGrade(i) / getMemberJob(i) -> n
+  guild.isMemberOnline(i) -> bool
+
+  shop.isOpen() -> bool                READ-ONLY listing of the shop you have OPEN
+  shop.isPrivate() / isMine() -> bool  (NPC or private shop). NO buy/sell API -
+  shop.tabCount() -> n                 you can read offers, never transact.
+  shop.slotCount() -> n                flat slot space (tabCount * per-tab slots)
+  shop.getItemVnum(slot) -> vnum       (0 for an empty slot)
+  shop.getItemPrice(slot) -> gold
+  shop.getItemCount(slot) -> n
+
+  chat.count() -> n                    READ-ONLY view of your OWN chat window
+  chat.getLine(i) -> text, type        i = 0 is the OLDEST retained line
+  event.on("chat", fn)                 fn(text, type) for each NEW chat line.
+                                       (there is NO chat SEND - read-only feed)
+
   buff.has(affectId) -> bool           READ-ONLY active-affect check on you
   buff.ids.DASH / .GEOMGYEONG / ...    curated affect id constants
 
@@ -107,6 +146,23 @@ What you can use (curated, sandboxed API - ALL gameplay reads are READ-ONLY):
                                        icon/userscript/<key>.tga - no path,
                                        directory or traversal can be expressed.
   ui.show(id) / hide(id) / destroy(id)
+
+  --- SAFE client-local writes (cosmetic / QoL only) -----------------------
+  These are the ONLY "write" APIs. Each is OUTPUT-ONLY: it renders text or plays
+  a sound on YOUR machine and does NOT send anything to the server or affect
+  gameplay, so it cannot become an automation or advantage.
+  chat.print(text)                     append ONE line to YOUR OWN chat window
+                                       (local render only; NEVER sent to the
+                                       server or other players). Source-tagged
+                                       with the addon name so it cannot forge a
+                                       system/GM/other-player message. Throttled.
+  sound.play(key) -> bool              play ONE curated local sound as an alert.
+                                       key = [a-z0-9_], <=32 -> fixed resource
+                                       sound/userscript/<key>.mp3 (no path/
+                                       traversal). Rate-limited; returns false if
+                                       throttled/rejected. Output-only: it cannot
+                                       act for you.
+
   plus safe standard libs: string, table, math, coroutine, utf8
 
 In-game: press F10 to open the Addon Manager. It lists every addon with its
@@ -116,8 +172,13 @@ sessions), reload a single addon in place, or reload them all.
 
 What you deliberately CANNOT do (sandbox / anti-cheat boundary):
   - no os, io, package/require, debug, load/loadfile/dofile  (no RCE / file access)
-  - no movement / attack / input synthesis / packet sending  (not a bot framework)
+  - no movement / attack / skill cast / item use-move-drop / buy-sell-trade /
+    target change / packet send / input synthesis (keys/mouse)  (not a bot framework)
+  - no chat/whisper SEND (chat is a read-only feed; chat.print is LOCAL echo only)
+  - no camera control, no screenshot trigger, no "auto-anything"
   - no access to other scripts' data or to the real Lua globals
+  The rule is glass-clear: a script may only OBSERVE client state and present it
+  locally/cosmetically - it may never act for the player.
 
 Notes:
   - A script that errors is logged and, after repeated faults, auto-disabled.
@@ -140,3 +201,7 @@ Worked examples in this folder:
                        quest.* + ui.createPanel/setLayer)
   cooldown_tracker.lua per-skill cooldown bars (skill.* read-only cooldowns)
   party_panel.lua      party roster with HP bars (party.* + ui.createLine)
+  guild_roster.lua     your-guild readout: name/level + top members (guild.*)
+  chat_alerts.lua      keyword watch on your chat + local echo/sound (chat.*,
+                       event.on("chat"), chat.print, sound.play)
+  shop_scanner.lua     lists the open shop's items/prices (read-only shop.*)

@@ -33,6 +33,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <deque>
 #include <cstdint>
 #include <chrono>
 
@@ -75,6 +76,19 @@ struct SUserScriptNearby
 	std::string	strName;
 	float		fDistance = 0.0f;
 	int			iKind = USERSCRIPT_NEARBY_OTHER;
+};
+
+// ELEMENTIA-USERSCRIPT: one captured chat-window line (read-only feed).
+// The manager keeps a small bounded ring of the most recent lines shown in the
+// client's own chat window so a script can read them (chat.getLine) and react to
+// them (event.on("chat", ...)). It is EXACTLY the text already on the player's
+// screen - never a private/hidden channel - and it is captured ONLY when no
+// userscript is on the call stack, so a script's own output can never feed back
+// into the log or re-trigger the chat event.
+struct SUserScriptChatLine
+{
+	int			iType = 0;			// EChatType (informational only)
+	std::string	strText;
 };
 
 // One scheduled timer callback (timer.after / timer.every).
@@ -135,6 +149,9 @@ struct SUserScript
 	std::string	strLastError;
 	int			iLogBudget = 0;		// remaining log lines this second
 	double		dLogWindowStart = 0.0;
+	// ELEMENTIA-USERSCRIPT: per-script throttle for sound.play so a runaway loop
+	// cannot machine-gun the audio engine (last time this script played a sound).
+	double		dLastSoundTime = -1.0;
 
 	// ELEMENTIA-USERSCRIPT: sandboxed per-script config.* storage.
 	// Lazily loaded from <client>/userscripts/config/<name>.dat on first use;
@@ -153,6 +170,7 @@ enum EUserScriptEvent
 {
 	USERSCRIPT_EVENT_UPDATE = 0,	// fired every game frame: fn(dtSeconds)
 	USERSCRIPT_EVENT_SECOND,		// fired ~once per second: fn()
+	USERSCRIPT_EVENT_CHAT,			// fired for each new chat-window line: fn(text, type)
 	USERSCRIPT_EVENT_MAX,
 };
 
@@ -201,7 +219,25 @@ class CUserScriptManager : public CSingleton<CUserScriptManager>
 		// Throttled logging helper (used by log.* bindings).
 		void  ApiLog(const char* c_szText, bool bWarn);
 
+		// ELEMENTIA-USERSCRIPT: SAFE client-local WRITE helpers (no server action,
+		// no gameplay effect - see UserScriptApi.cpp for the abuse analysis).
+		//   ApiChatPrint - append ONE line to the player's OWN chat window (local
+		//     render only, never sent to the server/other players); source-tagged so
+		//     it cannot impersonate a system/GM message; shares the log throttle.
+		//   ApiPlaySound - play ONE curated, whitelisted client sound (a short leaf
+		//     key -> FIXED internal resource path; no path injection); per-script
+		//     rate-limited. Output-only: it cannot act for the player.
+		void  ApiChatPrint(const char* c_szText);
+		bool  ApiPlaySound(const char* c_szKey);
+
 		double GlobalTime() const { return m_dGlobalTime; }
+
+		// ELEMENTIA-USERSCRIPT: read-only chat-window feed (chat.* bindings).
+		// Captured from the client's own chat window; index 0 is the OLDEST retained
+		// line. Bounded ring - never grows without limit. Feeds event.on("chat").
+		void  NotifyChat(int iType, const char* c_szText);
+		int   ChatLineCount() const { return (int)m_chatLog.size(); }
+		bool  ChatLine(int iIdx, std::string& strOut, int& iTypeOut) const;
 
 		// --- read-only target HP% cache (fed by the target packet handler) ---
 		// The client learns a target's HP percentage only from a server packet;
@@ -257,6 +293,7 @@ class CUserScriptManager : public CSingleton<CUserScriptManager>
 		void  SetScriptError(int iScriptIdx, const char* c_szError);
 		void  FreeScriptResources(int iScriptIdx);	// unref hooks/timers/widgets/env
 		void  DispatchEvent(int iEvent, double dArg);
+		void  DispatchChatEvents();		// drain m_chatPending into "chat" handlers
 		void  FireTimers();
 		void  FaultCurrentScript(const char* c_szWhere, const char* c_szError);
 
@@ -301,6 +338,13 @@ class CUserScriptManager : public CSingleton<CUserScriptManager>
 		// Throttled nearby-characters snapshot.
 		std::vector<SUserScriptNearby>	m_nearby;
 		double	m_dNearbyStamp = -1.0;
+
+		// Read-only chat feed: m_chatLog is the bounded history (chat.getLine);
+		// m_chatPending holds lines captured since the last pump, drained into the
+		// "chat" event handlers by DispatchChatEvents(). Both are trimmed to a hard
+		// cap so a chat flood cannot grow client memory without bound.
+		std::deque<SUserScriptChatLine>		m_chatLog;
+		std::vector<SUserScriptChatLine>	m_chatPending;
 
 		// Throttle for the periodic config flush (see FlushDirtyConfigs).
 		double	m_dConfigFlushStamp = 0.0;
