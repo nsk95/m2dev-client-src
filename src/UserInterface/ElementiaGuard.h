@@ -53,7 +53,7 @@
 // telemetry is clean AND the false-positive fixes in the scoring model
 // (per-window multi-signal arming, category decay, capped CRC contribution,
 // soft-only window/NtGlobalFlag signals) have been validated in the field.
-#define ELEMENTIA_GUARD_PASSIVE 1
+// #define ELEMENTIA_GUARD_PASSIVE 1  // ELEMENTIA: scharf geschaltet (aktive Reaktion) nach Fehlalarm-Fixes + Owner-Freigabe
 
 // Protection is only ever compiled into distribution builds (RelWithDebInfo /
 // Release define _DISTRIBUTE via the root CMakeLists) and can be force-disabled.
