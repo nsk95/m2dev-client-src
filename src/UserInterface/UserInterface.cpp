@@ -5,6 +5,7 @@
 #include "resource.h"
 #include "Version.h"
 #include "ElementiaHandoff.h"	// ELEMENTIA-HANDOFF
+#include "ElementiaGuard.h"		// ELEMENTIA-HARDENING (central kill-switch inside)
 
 #ifdef _DEBUG
 #include <crtdbg.h>
@@ -256,6 +257,15 @@ static bool Main(HINSTANCE hInstance, LPSTR lpCmdLine)
 	// existing DirectEnter path once the Python intro checks net.IsHandoffPending().
 	// With no handoff args this is a cheap no-op: a normal launch is unaffected.
 	Elementia_InitHandoffFromCommandLine(lpCmdLine);
+	// ------------------------------------------------------------------------
+
+	// ---- ELEMENTIA-HARDENING -----------------------------------------------
+	// Install client hardening (anti-dump header scrub + code-integrity baseline
+	// + first anti-debug snapshot). No-op in Debug builds / when the kill-switch
+	// (ELEMENTIA_DISABLE_PROTECTION) is defined. Fail-safe: never blocks launch,
+	// never touches the handoff/TLS/update paths. Runs AFTER the one-shot handoff
+	// consume above so the pipe read is untouched.
+	Elementia_Guard_Init();
 	// ------------------------------------------------------------------------
 
 	if (!CFontManager::Instance().Initialize())

@@ -10,6 +10,7 @@
 #include "PythonCharacterManager.h"
 
 #include "ProcessScanner.h"
+#include "ElementiaGuard.h"		// ELEMENTIA-HARDENING
 
 #include <utf8.h>
 
@@ -270,6 +271,11 @@ void CPythonApplication::UpdateGame()
 
 bool CPythonApplication::Process()
 {
+	// ELEMENTIA-HARDENING: internally throttled + randomised; on non-distribution
+	// builds and under the kill-switch this is a no-op. Never affects rendering,
+	// input, network I/O or the frame budget on the common (not-due) path.
+	Elementia_Guard_Tick();
+
 	ELTimer_SetFrameMSec();
 
 	// 	m_Profiler.Clear();
