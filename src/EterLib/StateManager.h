@@ -339,6 +339,15 @@ public:
 
 	LPDIRECT3DDEVICE9EX GetDevice();
 
+	// --- Backlog #98: always-available render instrumentation ----------------
+	// Compiled into every build (not only _DEBUG) so the draw-call-batching /
+	// state-change-minimisation wins are measurable on shipped clients. Cost is
+	// a single integer increment per issued draw / non-redundant device call.
+	// Call ResetFrameStats() once per frame (e.g. after Present) to snapshot.
+	void ResetFrameStats();
+	long GetFrameDrawCallCount() const;		// draw calls issued during last frame
+	long GetFrameStateChangeCount() const;	// real device state changes last frame
+
 #ifdef _DEBUG
 	void ResetDrawCallCounter();
 	int GetDrawCallCount() const;
@@ -371,6 +380,12 @@ private:
 	std::vector<BOOL>						m_VertexProcessingStack;
 	std::vector<CStreamData>				m_StreamStack[STATEMANAGER_MAX_STREAMS];
 	std::vector<CIndexData>					m_IndexStack;
+
+	// Backlog #98: always-available frame stats
+	long				m_lFrameDrawCallCount;
+	long				m_lLastFrameDrawCallCount;
+	long				m_lFrameStateChangeCount;
+	long				m_lLastFrameStateChangeCount;
 
 #ifdef _DEBUG
 	// Saving Flag

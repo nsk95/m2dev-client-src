@@ -1,6 +1,9 @@
 #include "StdAfx.h"
 #include "EterLib/Camera.h"
 #include "EterLib/TextBar.h"
+#include "EterLib/StateManager.h"		// Backlog #98: render instrumentation
+#include "EterLib/GrpDevice.h"			// Backlog #98: multithreaded device flag
+#include "EterLib/ResourceManager.h"	// Backlog #98: background upload budget
 
 #include <string>
 #include <utf8.h>
@@ -948,6 +951,49 @@ PyObject * grpGetTargetPosition(PyObject * poSelf, PyObject * poArgs)
 	return Py_BuildValue("fff", v3Target.x, v3Target.y, v3Target.z);
 }
 
+// --- Backlog #98: render instrumentation + perf controls --------------------
+PyObject * grpGetFrameDrawCallCount(PyObject * poSelf, PyObject * poArgs)
+{
+	long lValue = 0;
+	if (CStateManager::InstancePtr())
+		lValue = CStateManager::Instance().GetFrameDrawCallCount();
+	return Py_BuildValue("l", lValue);
+}
+
+PyObject * grpGetFrameStateChangeCount(PyObject * poSelf, PyObject * poArgs)
+{
+	long lValue = 0;
+	if (CStateManager::InstancePtr())
+		lValue = CStateManager::Instance().GetFrameStateChangeCount();
+	return Py_BuildValue("l", lValue);
+}
+
+PyObject * grpSetBackgroundUploadBudget(PyObject * poSelf, PyObject * poArgs)
+{
+	int iBudget;
+	if (!PyTuple_GetInteger(poArgs, 0, &iBudget))
+		return Py_BuildException();
+	if (iBudget < 0)
+		iBudget = 0;
+	CResourceManager::SetBackgroundUploadBudget((unsigned)iBudget);
+	return Py_BuildNone();
+}
+
+PyObject * grpGetBackgroundUploadBudget(PyObject * poSelf, PyObject * poArgs)
+{
+	return Py_BuildValue("i", (int)CResourceManager::GetBackgroundUploadBudget());
+}
+
+PyObject * grpSetMultiThreadedDeviceMode(PyObject * poSelf, PyObject * poArgs)
+{
+	int iEnable;
+	if (!PyTuple_GetInteger(poArgs, 0, &iEnable))
+		return Py_BuildException();
+	// NOTE: only takes effect at the next device (re-)creation.
+	CGraphicDevice::SetMultiThreadedDeviceMode(iEnable ? true : false);
+	return Py_BuildNone();
+}
+
 void initgrp()
 {
 	static PyMethodDef s_methods[] =
@@ -997,6 +1043,13 @@ void initgrp()
 		{ "SetOmniLight",				grpSetOmniLight,				METH_VARARGS },
 		{ "GetCameraPosition",			grpGetCameraPosition,			METH_VARARGS },
 		{ "GetTargetPosition",			grpGetTargetPosition,			METH_VARARGS },
+
+		// Backlog #98: render instrumentation + perf controls
+		{ "GetFrameDrawCallCount",		grpGetFrameDrawCallCount,		METH_VARARGS },
+		{ "GetFrameStateChangeCount",	grpGetFrameStateChangeCount,	METH_VARARGS },
+		{ "SetBackgroundUploadBudget",	grpSetBackgroundUploadBudget,	METH_VARARGS },
+		{ "GetBackgroundUploadBudget",	grpGetBackgroundUploadBudget,	METH_VARARGS },
+		{ "SetMultiThreadedDeviceMode",	grpSetMultiThreadedDeviceMode,	METH_VARARGS },
 
 		{ "CreateTextBar",				grpCreateTextBar,				METH_VARARGS },
 		{ "CreateBigTextBar",			grpCreateBigTextBar,			METH_VARARGS },

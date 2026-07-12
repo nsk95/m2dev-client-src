@@ -730,6 +730,11 @@ void CScreen::Show(HWND hWnd)
 		if (D3DERR_DEVICELOST == hr)
 			RestoreDevice();
 	}	
+
+	// Backlog #98: snapshot per-frame render stats (draw calls / state changes)
+	// right after Present so GetFrameDrawCallCount()/GetFrameStateChangeCount()
+	// report the frame that was just displayed.
+	STATEMANAGER.ResetFrameStats();
 }
 
 void CScreen::Show(RECT * pSrcRect)

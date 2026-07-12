@@ -17,6 +17,19 @@ D3DPRESENT_PARAMETERS g_kD3DPP;
 bool g_isBrowserMode=false;
 RECT g_rcBrowser;
 
+// Backlog #98: default OFF -> device is created exactly as before (fail-safe).
+bool CGraphicDevice::ms_bMultiThreadedDevice = false;
+
+void CGraphicDevice::SetMultiThreadedDeviceMode(bool bEnable)
+{
+	ms_bMultiThreadedDevice = bEnable;
+}
+
+bool CGraphicDevice::GetMultiThreadedDeviceMode()
+{
+	return ms_bMultiThreadedDevice;
+}
+
 CGraphicDevice::CGraphicDevice()
 : m_uBackBufferCount(0)
 {
@@ -465,11 +478,18 @@ RETRY:
 
 	D3DDISPLAYMODEEX* pDisplayMode = Windowed ? NULL : &displayModeEx;
 
+	// Backlog #98: optionally add D3DCREATE_MULTITHREADED (default off). The
+	// flag only affects internal D3D9 serialisation; it does not influence the
+	// vertex-processing caps confirmed via ms_dwD3DBehavior above.
+	DWORD dwCreateBehavior = ms_dwD3DBehavior;
+	if (ms_bMultiThreadedDevice)
+		dwCreateBehavior |= D3DCREATE_MULTITHREADED;
+
 	if (FAILED(ms_hLastResult = ms_lpd3d->CreateDeviceEx(
 		D3DADAPTER_DEFAULT,
 		D3DDEVTYPE_HAL,
 		hWnd,
-		ms_dwD3DBehavior,
+		dwCreateBehavior,
 		&ms_d3dPresentParameter,
 		pDisplayMode,
 		&ms_lpd3dDevice)))

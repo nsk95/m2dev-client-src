@@ -72,6 +72,10 @@ CStateManager::CStateManager(LPDIRECT3DDEVICE9EX lpDevice) : m_lpD3DDev(NULL)
 
 	SetDevice(lpDevice);
 
+	m_lFrameDrawCallCount = 0;
+	m_lLastFrameDrawCallCount = 0;
+	m_lFrameStateChangeCount = 0;
+	m_lLastFrameStateChangeCount = 0;
 #ifdef _DEBUG
 	m_iDrawCallCount = 0;
 	m_iLastDrawCallCount = 0;
@@ -486,6 +490,7 @@ void CStateManager::SetRenderState(D3DRENDERSTATETYPE Type, DWORD Value)
 
 	m_lpD3DDev->SetRenderState(Type, Value);
 	m_CurrentState.m_RenderStates[Type] = Value;
+	++m_lFrameStateChangeCount;
 }
 
 void CStateManager::GetRenderState(D3DRENDERSTATETYPE Type, DWORD* pdwValue)
@@ -513,6 +518,7 @@ void CStateManager::SetTexture(DWORD dwStage, LPDIRECT3DBASETEXTURE9 pTexture)
 
 	m_lpD3DDev->SetTexture(dwStage, pTexture);
 	m_CurrentState.m_Textures[dwStage] = pTexture;
+	++m_lFrameStateChangeCount;
 }
 
 void CStateManager::GetTexture(DWORD dwStage, LPDIRECT3DBASETEXTURE9* ppTexture)
@@ -547,6 +553,7 @@ void CStateManager::SetTextureStageState(DWORD dwStage, D3DTEXTURESTAGESTATETYPE
 
 	m_lpD3DDev->SetTextureStageState(dwStage, Type, dwValue);
 	m_CurrentState.m_TextureStates[dwStage][Type] = dwValue;
+	++m_lFrameStateChangeCount;
 }
 
 void CStateManager::GetTextureStageState(DWORD dwStage, D3DTEXTURESTAGESTATETYPE Type, DWORD* pdwValue)
@@ -578,6 +585,7 @@ void CStateManager::SetSamplerState(DWORD dwStage, D3DSAMPLERSTATETYPE Type, DWO
 		return;
 	m_lpD3DDev->SetSamplerState(dwStage, Type, dwValue);
 	m_CurrentState.m_SamplerStates[dwStage][Type] = dwValue;
+	++m_lFrameStateChangeCount;
 }
 void CStateManager::GetSamplerState(DWORD dwStage, D3DSAMPLERSTATETYPE Type, DWORD* pdwValue)
 {
@@ -604,6 +612,7 @@ void CStateManager::SetVertexShader(LPDIRECT3DVERTEXSHADER9 dwShader)
 
 	m_lpD3DDev->SetVertexShader(dwShader);
 	m_CurrentState.m_dwVertexShader = dwShader;
+	++m_lFrameStateChangeCount;
 }
 
 void CStateManager::GetVertexShader(LPDIRECT3DVERTEXSHADER9* pdwShader)
@@ -686,6 +695,7 @@ void CStateManager::SetPixelShader(LPDIRECT3DPIXELSHADER9 dwShader)
 
 	m_lpD3DDev->SetPixelShader(dwShader);
 	m_CurrentState.m_dwPixelShader = dwShader;
+	++m_lFrameStateChangeCount;
 }
 
 void CStateManager::GetPixelShader(LPDIRECT3DPIXELSHADER9* pdwShader)
@@ -764,6 +774,7 @@ void CStateManager::SetStreamSource(UINT StreamNumber, LPDIRECT3DVERTEXBUFFER9 p
 
 	m_lpD3DDev->SetStreamSource(StreamNumber, pStreamData, 0, Stride);
 	m_CurrentState.m_StreamData[StreamNumber] = kStreamData;
+	++m_lFrameStateChangeCount;
 }
 
 void CStateManager::SaveIndices(LPDIRECT3DINDEXBUFFER9 pIndexData, UINT BaseVertexIndex)
@@ -788,10 +799,12 @@ void CStateManager::SetIndices(LPDIRECT3DINDEXBUFFER9 pIndexData, UINT BaseVerte
 
 	m_lpD3DDev->SetIndices(pIndexData);
 	m_CurrentState.m_IndexData = kIndexData;
+	++m_lFrameStateChangeCount;
 }
 
 HRESULT CStateManager::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount)
 {
+	++m_lFrameDrawCallCount;
 #ifdef _DEBUG
 	++m_iDrawCallCount;
 #endif
@@ -801,6 +814,7 @@ HRESULT CStateManager::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartV
 
 HRESULT CStateManager::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, const void* pVertexStreamZeroData, UINT VertexStreamZeroStride)
 {
+	++m_lFrameDrawCallCount;
 #ifdef _DEBUG
 	++m_iDrawCallCount;
 #endif
@@ -811,6 +825,7 @@ HRESULT CStateManager::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT Prim
 
 HRESULT CStateManager::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT minIndex, UINT NumVertices, UINT startIndex, UINT primCount)
 {
+	++m_lFrameDrawCallCount;
 #ifdef _DEBUG
 	++m_iDrawCallCount;
 #endif
@@ -820,6 +835,7 @@ HRESULT CStateManager::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
 
 HRESULT CStateManager::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, INT baseVertexIndex, UINT minIndex, UINT NumVertices, UINT startIndex, UINT primCount)
 {
+	++m_lFrameDrawCallCount;
 #ifdef _DEBUG
 	++m_iDrawCallCount;
 #endif
@@ -829,6 +845,7 @@ HRESULT CStateManager::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, INT 
 
 HRESULT CStateManager::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinVertexIndex, UINT NumVertexIndices, UINT PrimitiveCount, CONST void* pIndexData, D3DFORMAT IndexDataFormat, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride)
 {
+	++m_lFrameDrawCallCount;
 #ifdef _DEBUG
 	++m_iDrawCallCount;
 #endif
@@ -850,3 +867,22 @@ int CStateManager::GetDrawCallCount() const
 	return m_iLastDrawCallCount;
 }
 #endif
+
+// --- Backlog #98: always-available render instrumentation --------------------
+void CStateManager::ResetFrameStats()
+{
+	m_lLastFrameDrawCallCount = m_lFrameDrawCallCount;
+	m_lLastFrameStateChangeCount = m_lFrameStateChangeCount;
+	m_lFrameDrawCallCount = 0;
+	m_lFrameStateChangeCount = 0;
+}
+
+long CStateManager::GetFrameDrawCallCount() const
+{
+	return m_lLastFrameDrawCallCount;
+}
+
+long CStateManager::GetFrameStateChangeCount() const
+{
+	return m_lLastFrameStateChangeCount;
+}
