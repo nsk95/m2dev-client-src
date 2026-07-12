@@ -32,6 +32,8 @@
 #include "PythonCharacterManager.h"	// target.* / nearby.* read-only getters
 #include "InstanceBase.h"			// CInstanceBase read-only getters
 #include "PythonChat.h"
+#include "PythonBackground.h"		// map.getName() (read-only current map name)
+#include "PythonQuest.h"			// quest.* (read-only active-quest readout)
 #include "Packet.h"			// EChatType, EPointTypes
 #include "GameType.h"		// TItemPos / inventory slot constants
 
@@ -149,6 +151,208 @@ static int l_player_getMaxHP(lua_State* L)   { return PlayerStatus(L, POINT_MAX_
 static int l_player_getSP(lua_State* L)      { return PlayerStatus(L, POINT_SP); }
 static int l_player_getMaxSP(lua_State* L)   { return PlayerStatus(L, POINT_MAX_SP); }
 static int l_player_getGold(lua_State* L)    { return PlayerStatus(L, POINT_GOLD); }
+// Additional READ-ONLY own-character points. All go through CPythonPlayer::
+// GetStatus(point), which is a pure read of the local player-status block the
+// client already keeps for its own HUD; POINT ids are compile-time constants so
+// no script-supplied index reaches GetStatus (it also bounds-checks internally).
+static int l_player_getExp(lua_State* L)        { return PlayerStatus(L, POINT_EXP); }
+static int l_player_getMaxExp(lua_State* L)      { return PlayerStatus(L, POINT_NEXT_EXP); }
+static int l_player_getStamina(lua_State* L)     { return PlayerStatus(L, POINT_STAMINA); }
+static int l_player_getMaxStamina(lua_State* L)  { return PlayerStatus(L, POINT_MAX_STAMINA); }
+static int l_player_getST(lua_State* L)          { return PlayerStatus(L, POINT_ST); }
+static int l_player_getHT(lua_State* L)          { return PlayerStatus(L, POINT_HT); }
+static int l_player_getDX(lua_State* L)          { return PlayerStatus(L, POINT_DX); }
+static int l_player_getIQ(lua_State* L)          { return PlayerStatus(L, POINT_IQ); }
+static int l_player_getAttackPower(lua_State* L) { return PlayerStatus(L, POINT_ATT_POWER); }
+static int l_player_getDefense(lua_State* L)     { return PlayerStatus(L, POINT_DEF_GRADE); }
+
+// ---------------------------------------------------------------------------
+// map.*  - READ-ONLY current map name. The client already stores the active
+// warp-map name for its own HUD/Discord presence; we just surface it. There is
+// no setter and no warp/teleport request anywhere in the API.
+// ---------------------------------------------------------------------------
+static int l_map_getName(lua_State* L)
+{
+	CPythonBackground* pBg = CPythonBackground::InstancePtr();
+	const char* c_szName = pBg ? pBg->GetWarpMapName() : "";
+	lua_pushstring(L, c_szName ? c_szName : "");
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
+// skill.*  - READ-ONLY view of the OWN character's skill slots: level/grade and
+// cooldown progress. Backed by CPythonPlayer's local skill block (the same data
+// the skill window/quickslots read). Every getter bounds-checks the slot index
+// against SKILL_MAX_NUM inside CPythonPlayer, and there is NO cast/use/activate
+// binding: a script can observe cooldowns but can never trigger a skill.
+// ---------------------------------------------------------------------------
+static bool SkillSlotArg(lua_State* L, int arg, DWORD* out)
+{
+	lua_Integer slot = luaL_checkinteger(L, arg);
+	if (slot < 0 || slot >= (lua_Integer)SKILL_MAX_NUM)
+		return false;
+	*out = (DWORD)slot;
+	return true;
+}
+static int l_skill_slotCount(lua_State* L)
+{
+	lua_pushinteger(L, (lua_Integer)SKILL_MAX_NUM);
+	return 1;
+}
+static int l_skill_getIndex(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetSkillIndex(slot));
+	return 1;
+}
+static int l_skill_getLevel(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetSkillLevel(slot));
+	return 1;
+}
+static int l_skill_getGrade(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushinteger(L, 0); return 1; }
+	lua_pushinteger(L, (lua_Integer)p->GetSkillGrade(slot));
+	return 1;
+}
+static int l_skill_getCoolTime(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushnumber(L, 0.0); return 1; }
+	lua_pushnumber(L, (lua_Number)p->GetSkillCoolTime(slot));
+	return 1;
+}
+static int l_skill_getElapsedCoolTime(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushnumber(L, 0.0); return 1; }
+	lua_pushnumber(L, (lua_Number)p->GetSkillElapsedCoolTime(slot));
+	return 1;
+}
+// Convenience: remaining cooldown seconds (>=0), computed from total-elapsed.
+static int l_skill_getRemainingCoolTime(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushnumber(L, 0.0); return 1; }
+	float total   = p->GetSkillCoolTime(slot);
+	float elapsed = p->GetSkillElapsedCoolTime(slot);
+	float remain  = total - elapsed;
+	if (remain < 0.0f) remain = 0.0f;
+	if (remain > total) remain = total;		// guard clock skew right after use
+	lua_pushnumber(L, (lua_Number)remain);
+	return 1;
+}
+static int l_skill_isCoolTime(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushboolean(L, 0); return 1; }
+	lua_pushboolean(L, p->IsSkillCoolTime(slot) ? 1 : 0);
+	return 1;
+}
+static int l_skill_isActive(lua_State* L)
+{
+	DWORD slot; CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	if (!p || !SkillSlotArg(L, 1, &slot)) { lua_pushboolean(L, 0); return 1; }
+	lua_pushboolean(L, p->IsSkillActive(slot) ? 1 : 0);
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
+// party.*  - READ-ONLY roster of the player's OWN party: member name + server-
+// provided HP percentage + coarse state. Backed by CPythonPlayer's local party
+// map (the same data the party HUD uses). This is explicitly YOUR party only -
+// it is NOT an arbitrary other-player read, and there is no invite/kick/leader
+// mutation exposed. Index-addressed and bounds-checked in CPythonPlayer.
+// ---------------------------------------------------------------------------
+static int l_party_count(lua_State* L)
+{
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	lua_pushinteger(L, p ? (lua_Integer)p->GetPartyMemberCount() : 0);
+	return 1;
+}
+static int l_party_getName(lua_State* L)
+{
+	int idx = (int)luaL_checkinteger(L, 1);
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	std::string name;
+	if (p && p->GetPartyMemberByArrayIndex(idx, &name, nullptr, nullptr))
+		lua_pushstring(L, name.c_str());
+	else
+		lua_pushstring(L, "");
+	return 1;
+}
+static int l_party_getHPPercent(lua_State* L)
+{
+	int idx = (int)luaL_checkinteger(L, 1);
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	int hp = -1;
+	if (p && p->GetPartyMemberByArrayIndex(idx, nullptr, &hp, nullptr))
+		lua_pushinteger(L, hp);
+	else
+		lua_pushinteger(L, -1);
+	return 1;
+}
+static int l_party_getState(lua_State* L)
+{
+	int idx = (int)luaL_checkinteger(L, 1);
+	CPythonPlayer* p = CPythonPlayer::InstancePtr();
+	int state = -1;
+	if (p && p->GetPartyMemberByArrayIndex(idx, nullptr, nullptr, &state))
+		lua_pushinteger(L, state);
+	else
+		lua_pushinteger(L, -1);
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
+// quest.*  - READ-ONLY readout of the client's active quest list (title + the
+// optional counter/clock the quest exposes). Backed by CPythonQuest, which the
+// client already fills for its own quest UI; GetQuestInstancePtr bounds-checks
+// the array index. No accept/abandon/progress mutation is exposed.
+// ---------------------------------------------------------------------------
+static CPythonQuest::SQuestInstance* ResolveQuest(int idx)
+{
+	CPythonQuest* q = CPythonQuest::InstancePtr();
+	if (!q || idx < 0 || idx >= q->GetQuestCount())
+		return nullptr;
+	CPythonQuest::SQuestInstance* pInst = nullptr;
+	if (!q->GetQuestInstancePtr((DWORD)idx, &pInst))
+		return nullptr;
+	return pInst;
+}
+static int l_quest_count(lua_State* L)
+{
+	CPythonQuest* q = CPythonQuest::InstancePtr();
+	lua_pushinteger(L, q ? (lua_Integer)q->GetQuestCount() : 0);
+	return 1;
+}
+static int l_quest_getTitle(lua_State* L)
+{
+	CPythonQuest::SQuestInstance* pInst = ResolveQuest((int)luaL_checkinteger(L, 1));
+	lua_pushstring(L, pInst ? pInst->strTitle.c_str() : "");
+	return 1;
+}
+// quest.getCounter(idx) -> name, value   (name is "" and value 0 when absent)
+static int l_quest_getCounter(lua_State* L)
+{
+	CPythonQuest::SQuestInstance* pInst = ResolveQuest((int)luaL_checkinteger(L, 1));
+	lua_pushstring(L, pInst ? pInst->strCounterName.c_str() : "");
+	lua_pushinteger(L, pInst ? (lua_Integer)pInst->iCounterValue : 0);
+	return 2;
+}
+// quest.getClock(idx) -> name, value
+static int l_quest_getClock(lua_State* L)
+{
+	CPythonQuest::SQuestInstance* pInst = ResolveQuest((int)luaL_checkinteger(L, 1));
+	lua_pushstring(L, pInst ? pInst->strClockName.c_str() : "");
+	lua_pushinteger(L, pInst ? (lua_Integer)pInst->iClockValue : 0);
+	return 2;
+}
 
 // ---------------------------------------------------------------------------
 // coord.*  - READ-ONLY own map position (pixels). Derived from the main actor.
@@ -612,6 +816,14 @@ static int l_ui_createIcon(lua_State* L)
 {
 	return CreateWidgetOfType(L, USERSCRIPT_WIDGET_ICON, "ui.createIcon");
 }
+static int l_ui_createLine(lua_State* L)
+{
+	return CreateWidgetOfType(L, USERSCRIPT_WIDGET_LINE, "ui.createLine");
+}
+static int l_ui_createPanel(lua_State* L)
+{
+	return CreateWidgetOfType(L, USERSCRIPT_WIDGET_PANEL, "ui.createPanel");
+}
 // ui.setIcon(id, vnum) - show a client-internal ITEM icon (resolved from vnum).
 // vnum 0 clears the icon. There is NO path parameter anywhere: the only way to
 // choose an image is a vnum (item table) or a curated key (ui.setIconKey), so a
@@ -682,6 +894,32 @@ static int l_ui_setSize(lua_State* L)
 	if (ww < 0.0f) ww = 0.0f;
 	if (hh < 0.0f) hh = 0.0f;
 	if (w) { w->fW = ww; w->fH = hh; }
+	return 0;
+}
+// ui.setLine(id, x2, y2[, thickness]) - LINE end point (start is setPosition)
+// and optional thickness in pixels (clamped 1..16).
+static int l_ui_setLine(lua_State* L)
+{
+	SUserScriptWidget* w = nullptr;
+	RequireOwnedWidget(L, 1, &w);
+	float x2 = (float)luaL_checknumber(L, 2);
+	float y2 = (float)luaL_checknumber(L, 3);
+	float th = (float)luaL_optnumber(L, 4, 1.0);
+	if (th < 1.0f) th = 1.0f;
+	if (th > 16.0f) th = 16.0f;
+	if (w) { w->fX2 = x2; w->fY2 = y2; w->fThickness = th; }
+	return 0;
+}
+// ui.setLayer(id, n) - draw order; lower layers draw first (behind). Clamped to
+// a small range so it can only reorder, never be abused as a huge value.
+static int l_ui_setLayer(lua_State* L)
+{
+	SUserScriptWidget* w = nullptr;
+	RequireOwnedWidget(L, 1, &w);
+	int layer = (int)luaL_checkinteger(L, 2);
+	if (layer < -128) layer = -128;
+	if (layer > 128)  layer = 128;
+	if (w) w->iLayer = layer;
 	return 0;
 }
 // ui.setProgress(id, frac) - BAR fill fraction, clamped 0..1.
@@ -859,13 +1097,23 @@ void UserScript_PushSandboxEnv(lua_State* L)
 	RegisterTable(L, "log", logFuncs);
 
 	static const luaL_Reg playerFuncs[] = {
-		{ "getName",  l_player_getName },
-		{ "getLevel", l_player_getLevel },
-		{ "getHP",    l_player_getHP },
-		{ "getMaxHP", l_player_getMaxHP },
-		{ "getSP",    l_player_getSP },
-		{ "getMaxSP", l_player_getMaxSP },
-		{ "getGold",  l_player_getGold },
+		{ "getName",        l_player_getName },
+		{ "getLevel",       l_player_getLevel },
+		{ "getHP",          l_player_getHP },
+		{ "getMaxHP",       l_player_getMaxHP },
+		{ "getSP",          l_player_getSP },
+		{ "getMaxSP",       l_player_getMaxSP },
+		{ "getGold",        l_player_getGold },
+		{ "getExp",         l_player_getExp },
+		{ "getMaxExp",      l_player_getMaxExp },
+		{ "getStamina",     l_player_getStamina },
+		{ "getMaxStamina",  l_player_getMaxStamina },
+		{ "getST",          l_player_getST },
+		{ "getHT",          l_player_getHT },
+		{ "getDX",          l_player_getDX },
+		{ "getIQ",          l_player_getIQ },
+		{ "getAttackPower", l_player_getAttackPower },
+		{ "getDefense",     l_player_getDefense },
 		{ nullptr, nullptr }
 	};
 	RegisterTable(L, "player", playerFuncs);
@@ -885,12 +1133,16 @@ void UserScript_PushSandboxEnv(lua_State* L)
 		{ "createRect",   l_ui_createRect },
 		{ "createBar",    l_ui_createBar },
 		{ "createIcon",   l_ui_createIcon },
+		{ "createLine",   l_ui_createLine },
+		{ "createPanel",  l_ui_createPanel },
 		{ "setText",      l_ui_setText },
 		{ "setIcon",      l_ui_setIcon },
 		{ "setIconKey",   l_ui_setIconKey },
 		{ "setPosition",  l_ui_setPosition },
 		{ "setColor",     l_ui_setColor },
 		{ "setSize",      l_ui_setSize },
+		{ "setLine",      l_ui_setLine },
+		{ "setLayer",     l_ui_setLayer },
 		{ "setProgress",  l_ui_setProgress },
 		{ "setBackColor", l_ui_setBackColor },
 		{ "show",         l_ui_show },
@@ -1034,11 +1286,52 @@ void UserScript_PushSandboxEnv(lua_State* L)
 	};
 	RegisterTable(L, "config", configFuncs);
 
+	static const luaL_Reg mapFuncs[] = {
+		{ "getName", l_map_getName },
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "map", mapFuncs);
+
+	static const luaL_Reg skillFuncs[] = {
+		{ "slotCount",           l_skill_slotCount },
+		{ "getIndex",            l_skill_getIndex },
+		{ "getLevel",            l_skill_getLevel },
+		{ "getGrade",            l_skill_getGrade },
+		{ "getCoolTime",         l_skill_getCoolTime },
+		{ "getElapsedCoolTime",  l_skill_getElapsedCoolTime },
+		{ "getRemainingCoolTime",l_skill_getRemainingCoolTime },
+		{ "isCoolTime",          l_skill_isCoolTime },
+		{ "isActive",            l_skill_isActive },
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "skill", skillFuncs);
+
+	static const luaL_Reg partyFuncs[] = {
+		{ "count",        l_party_count },
+		{ "getName",      l_party_getName },
+		{ "getHPPercent", l_party_getHPPercent },
+		{ "getState",     l_party_getState },
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "party", partyFuncs);
+
+	static const luaL_Reg questFuncs[] = {
+		{ "count",      l_quest_count },
+		{ "getTitle",   l_quest_getTitle },
+		{ "getCounter", l_quest_getCounter },
+		{ "getClock",   l_quest_getClock },
+		{ nullptr, nullptr }
+	};
+	RegisterTable(L, "quest", questFuncs);
+
 	// elementia = { version = N, sandbox = true }  (read-only-ish info)
 	// v2: added target/nearby/inventory/buff/coord/time/config + rect/bar widgets.
 	// v3: added equipment.* (read-only worn gear) + ui.createIcon/setIcon/setIconKey.
+	// v4: added player exp/stamina/stat getters, map.*, skill.* (read-only cooldowns),
+	//     party.* (own-party roster), quest.* (active-quest readout) + ui.createLine/
+	//     createPanel/setLine/setLayer widgets.
 	lua_newtable(L);
-	lua_pushinteger(L, 3);
+	lua_pushinteger(L, 4);
 	lua_setfield(L, -2, "version");
 	lua_pushboolean(L, 1);
 	lua_setfield(L, -2, "sandbox");

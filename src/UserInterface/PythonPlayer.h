@@ -382,6 +382,15 @@ class CPythonPlayer : public CSingleton<CPythonPlayer>, public IAbstractPlayer
 		bool	PartyMemberPIDToVID(DWORD dwPID, DWORD * pdwVID);
 		bool	PartyMemberVIDToPID(DWORD dwVID, DWORD * pdwPID);
 		bool	IsSamePartyMember(DWORD dwVID1, DWORD dwVID2);
+		// ELEMENTIA-USERSCRIPT: strictly READ-ONLY roster access for the sandboxed
+		// userscript party.* API. Returns the number of local party members and a
+		// copy of member data addressed by a stable array index (0..count-1, the
+		// member map iterated in ascending PID order). These NEVER mutate party
+		// state and only ever expose the local player's OWN party (name + server-
+		// provided HP percentage + coarse state) - no arbitrary other-player read.
+		int		GetPartyMemberCount() const;
+		bool	GetPartyMemberByArrayIndex(int iArrayIndex, std::string * pstrName,
+					int * piHPPercent, int * piState) const;
 
 
 		// Fight

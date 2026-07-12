@@ -28,7 +28,9 @@
 
 typedef unsigned char BYTE;
 typedef unsigned short WORD;
-typedef unsigned long DWORD;
+// See lzo.h: DWORD must be a fixed 4-byte type to match the client's on-disk
+// proto record layout (stride 335 mob / 236 item) and the 16-byte DWORD[4] key.
+typedef uint32_t DWORD;
 
 enum EMisc
 {
@@ -163,7 +165,7 @@ enum EItemMisc
 typedef struct SItemLimit
 {
 	BYTE	bType;
-	long	lValue;
+	int32_t	lValue;		// 4 bytes: matches client (Win32 `long`), NOT LP64 `long`
 } TItemLimit;
 #pragma pack()
 
@@ -171,7 +173,7 @@ typedef struct SItemLimit
 typedef struct SItemApply
 {
 	BYTE	bType;
-	long	lValue;
+	int32_t	lValue;		// 4 bytes: matches client (Win32 `long`), NOT LP64 `long`
 } TItemApply;
 #pragma pack()
 
@@ -198,8 +200,8 @@ typedef struct
 
 	TItemLimit	aLimits[ITEM_LIMIT_MAX_NUM];
 	TItemApply	aApplies[ITEM_APPLY_MAX_NUM];
-	long        alValues[ITEM_VALUES_MAX_NUM];
-	long	alSockets[ITEM_SOCKET_MAX_NUM];
+	int32_t     alValues[ITEM_VALUES_MAX_NUM];	// 4-byte each (Win32 long)
+	int32_t	alSockets[ITEM_SOCKET_MAX_NUM];		// 4-byte each (Win32 long)
 	DWORD	dwRefinedVnum;
 	WORD	wRefineSet;
 	BYTE	bAlterToMagicItemPct;

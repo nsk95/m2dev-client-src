@@ -9,9 +9,34 @@ What you can use (curated, sandboxed API - ALL gameplay reads are READ-ONLY):
   player.getName() / getLevel()        READ-ONLY player state
   player.getHP() / getMaxHP()
   player.getSP() / getMaxSP() / getGold()
+  player.getExp() / getMaxExp()        current / next-level experience
+  player.getStamina() / getMaxStamina()
+  player.getST() / getHT() / getDX() / getIQ()      the four base stats
+  player.getAttackPower() / getDefense()
+
+  map.getName() -> string              READ-ONLY current map name (no warp API)
 
   coord.get() -> x, y                  READ-ONLY own map position (pixels)
   coord.getX() / coord.getY()
+
+  skill.slotCount() -> n               READ-ONLY view of YOUR skill slots
+  skill.getIndex(slot) -> skillId      (0 = empty slot)
+  skill.getLevel(slot) / getGrade(slot)
+  skill.getCoolTime(slot) -> seconds   the slot's total cooldown
+  skill.getElapsedCoolTime(slot)       seconds since it was last used
+  skill.getRemainingCoolTime(slot)     seconds left (>= 0)
+  skill.isCoolTime(slot) -> bool       currently cooling down?
+  skill.isActive(slot) -> bool         (there is NO skill.use/cast - read only)
+
+  party.count() -> n                   READ-ONLY YOUR-party roster only
+  party.getName(i) -> string           i = 0 .. count-1
+  party.getHPPercent(i) -> 0..100      (-1 if unknown)
+  party.getState(i) -> n               (coarse member state)
+
+  quest.count() -> n                   READ-ONLY active-quest readout
+  quest.getTitle(i) -> string          i = 0 .. count-1
+  quest.getCounter(i) -> name, value   quest counter (name "" if none)
+  quest.getClock(i) -> name, value     quest clock/timer
 
   target.exists() -> bool              READ-ONLY info about YOUR selected target
   target.getName() / getLevel()        (you cannot change or clear the target)
@@ -60,8 +85,17 @@ What you can use (curated, sandboxed API - ALL gameplay reads are READ-ONLY):
   ui.createBar()  -> id                progress bar (setSize + setProgress +
                                        setColor + setBackColor)
   ui.createIcon() -> id                item-icon widget (see setIcon below)
+  ui.createLine() -> id                2D line (setPosition = start, setLine = end)
+  ui.createPanel() -> id               framed container: translucent fill (setBackColor)
+                                       + outline border (setColor); size via setSize.
+                                       It is a background frame, NOT a parent that owns
+                                       child widgets - place other widgets over it and
+                                       use setLayer to control depth.
   ui.setText(id, str) / setPosition(id,x,y) / setColor(id,r,g,b[,a])
   ui.setSize(id,w,h) / setProgress(id,0..1) / setBackColor(id,r,g,b[,a])
+  ui.setLine(id, x2, y2[, thickness])  LINE end point + thickness (1..16 px)
+  ui.setLayer(id, n)                   draw order (-128..128); lower draws first
+                                       (behind). Lets a panel sit behind its text.
   ui.setIcon(id, vnum)                 show a client-internal ITEM icon by vnum
                                        (0 clears it). There is NO file-path arg:
                                        the icon is resolved through the client's
@@ -75,7 +109,10 @@ What you can use (curated, sandboxed API - ALL gameplay reads are READ-ONLY):
   ui.show(id) / hide(id) / destroy(id)
   plus safe standard libs: string, table, math, coroutine, utf8
 
-In-game: press F10 to open the Addon Manager (enable/disable/reload addons).
+In-game: press F10 to open the Addon Manager. It lists every addon with its
+enable/disable state, and - when an addon fails to load - the exact error
+message so you can fix it. You can enable/disable addons (remembered between
+sessions), reload a single addon in place, or reload them all.
 
 What you deliberately CANNOT do (sandbox / anti-cheat boundary):
   - no os, io, package/require, debug, load/loadfile/dofile  (no RCE / file access)
@@ -92,5 +129,14 @@ Notes:
 The server anti-cheat remains authoritative for all gameplay regardless of what
 client userscripts do.
 
-See hud_stats.lua for a worked example, and equip_icons.lua for an
-equipment.* + ui.createIcon example (a small worn-gear icon HUD).
+Worked examples in this folder:
+  hud_stats.lua        minimal name/level/HP text overlay (start here)
+  coords.lua           coordinate readout + config-persisted position
+  buff_timer.lua       buff/affect HUD (counts up from on/off transitions)
+  dps_meter.lua        target HP%/s estimate + HP bar (display only)
+  loot_filter.lua      inventory watch/bag-full advisory (no auto-pickup)
+  equip_icons.lua      equipment.* + ui.createIcon worn-gear icon HUD
+  char_panel.lua       framed HUD: vitals + EXP + map + quest (player.*/map.*/
+                       quest.* + ui.createPanel/setLayer)
+  cooldown_tracker.lua per-skill cooldown bars (skill.* read-only cooldowns)
+  party_panel.lua      party roster with HP bars (party.* + ui.createLine)

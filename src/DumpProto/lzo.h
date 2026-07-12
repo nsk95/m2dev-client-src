@@ -4,10 +4,14 @@
 #include "Singleton.h"
 #include <lzo/lzo1x.h>
 #include <lzo/lzoconf.h>
+#include <cstdint>
 
 typedef unsigned char BYTE;
 typedef unsigned short WORD;
-typedef unsigned long DWORD;
+// DWORD MUST be exactly 4 bytes to match the on-disk proto layout the game
+// client reads. On Win32 `unsigned long` is 4 bytes, but on LP64 Linux it is
+// 8 bytes, which corrupts every struct/header/key. Pin it to uint32_t.
+typedef uint32_t DWORD;
 typedef unsigned int UINT;
 
 class CLZObject {

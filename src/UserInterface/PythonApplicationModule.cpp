@@ -1307,12 +1307,30 @@ PyObject* appGetUserScriptInfo(PyObject* poSelf, PyObject* poArgs)
 	if (index < 0 || index >= mgr.ScriptCount())
 		return Py_BuildException();
 
-	// (name, enabled, faulted, errorCount)
+	// (name, enabled, faulted, errorCount) - unchanged 4-tuple so existing UI
+	// code keeps working. The last error TEXT is fetched separately via
+	// app.GetUserScriptError(index) to stay backward compatible.
 	return Py_BuildValue("(siii)",
 		mgr.ScriptName(index),
 		mgr.ScriptEnabled(index) ? 1 : 0,
 		mgr.ScriptFaulted(index) ? 1 : 0,
 		mgr.ScriptErrorCount(index));
+}
+
+// Last compile/runtime error text for an addon ("" when healthy). The F10
+// manager shows it so a load failure is diagnosable in-game. Kept separate from
+// GetUserScriptInfo so the existing info-tuple contract is unchanged.
+PyObject* appGetUserScriptError(PyObject* poSelf, PyObject* poArgs)
+{
+	int index;
+	if (!PyTuple_GetInteger(poArgs, 0, &index))
+		return Py_BuildException();
+
+	CUserScriptManager& mgr = CUserScriptManager::Instance();
+	if (index < 0 || index >= mgr.ScriptCount())
+		return Py_BuildException();
+
+	return Py_BuildValue("s", mgr.ScriptError(index));
 }
 
 PyObject* appSetUserScriptEnabled(PyObject* poSelf, PyObject* poArgs)
@@ -1334,6 +1352,17 @@ PyObject* appReloadUserScripts(PyObject* poSelf, PyObject* poArgs)
 	return Py_BuildNone();
 }
 
+// Reload just ONE addon (by list index) - the F10 manager's per-addon reload.
+PyObject* appReloadUserScript(PyObject* poSelf, PyObject* poArgs)
+{
+	int index;
+	if (!PyTuple_GetInteger(poArgs, 0, &index))
+		return Py_BuildException();
+
+	bool ok = CUserScriptManager::Instance().ReloadScript(index);
+	return Py_BuildValue("i", ok ? 1 : 0);
+}
+
 void initapp()
 {
 	static PyMethodDef s_methods[] =
@@ -1341,8 +1370,10 @@ void initapp()
 		// ELEMENTIA-USERSCRIPT: addon-manager surface (read/enable/reload).
 		{ "GetUserScriptCount",			appGetUserScriptCount,			METH_VARARGS },
 		{ "GetUserScriptInfo",			appGetUserScriptInfo,			METH_VARARGS },
+		{ "GetUserScriptError",			appGetUserScriptError,			METH_VARARGS },
 		{ "SetUserScriptEnabled",		appSetUserScriptEnabled,		METH_VARARGS },
 		{ "ReloadUserScripts",			appReloadUserScripts,			METH_VARARGS },
+		{ "ReloadUserScript",			appReloadUserScript,			METH_VARARGS },
 
 		// TEXTTAIL_LIVINGTIME_CONTROL
 		{ "SetTextTailLivingTime",		appSetTextTailLivingTime,		METH_VARARGS },

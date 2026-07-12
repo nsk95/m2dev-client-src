@@ -178,7 +178,9 @@ bool CLZObject::Encrypt(DWORD * pdwKey)
 	// TEA pads to 8-byte boundaries; encrypt the FourCC + compressed data
 	DWORD dwSizeToEncrypt = sizeof(DWORD) + m_pHeader->dwCompressedSize;
 	fprintf(stderr, "Encrypt: dwCompressedSize=%u, dwSizeToEncrypt=%u\n", m_pHeader->dwCompressedSize, dwSizeToEncrypt);
-	m_pHeader->dwEncryptSize = tea_encrypt((DWORD *) pbBuffer, (const DWORD *) pbBuffer, pdwKey, dwSizeToEncrypt);
+	// tea_* take `unsigned long*` (byte buffers internally); cast explicitly
+	// since DWORD is now uint32_t and no longer identical to unsigned long.
+	m_pHeader->dwEncryptSize = tea_encrypt((unsigned long *) pbBuffer, (const unsigned long *) pbBuffer, (const unsigned long *) pdwKey, dwSizeToEncrypt);
 	fprintf(stderr, "Encrypt: dwEncryptSize=%u (return from tea_encrypt)\n", m_pHeader->dwEncryptSize);
 	if (m_pHeader->dwEncryptSize == 0)
 	{
@@ -194,7 +196,7 @@ BYTE * CLZObject::Decrypt(DWORD * pdwKey)
 
 	BYTE * pbDecryptBuffer = new BYTE[m_pHeader->dwEncryptSize];
 
-	tea_encrypt((DWORD *) pbDecryptBuffer, (const DWORD *) (m_pbIn - sizeof(DWORD)), pdwKey, m_pHeader->dwEncryptSize);
+	tea_encrypt((unsigned long *) pbDecryptBuffer, (const unsigned long *) (m_pbIn - sizeof(DWORD)), (const unsigned long *) pdwKey, m_pHeader->dwEncryptSize);
 	return pbDecryptBuffer;
 }
 

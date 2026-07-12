@@ -233,18 +233,6 @@ void CUserScriptManager::LoadScriptFile(const std::string& strPath)
 	lua_State* L = m_pLuaState;
 	if (!L) return;
 
-	// Read file bytes (plain disk file; NOT via the eterpack VFS on purpose -
-	// userscripts are meant to be hand-editable by the player).
-	std::ifstream f(strPath, std::ios::binary);
-	if (!f)
-	{
-		TraceError("[USERSCRIPT] cannot open %s", strPath.c_str());
-		return;
-	}
-	std::stringstream ss;
-	ss << f.rdbuf();
-	std::string src = ss.str();
-
 	std::filesystem::path pp(strPath);
 	std::string name = pp.stem().string();
 
@@ -261,20 +249,60 @@ void CUserScriptManager::LoadScriptFile(const std::string& strPath)
 	m_scripts.push_back(sc);
 	int scriptIdx = (int)m_scripts.size() - 1;
 
+	LoadScriptChunk(scriptIdx);
+}
+
+// Store a length-capped copy of the last error and log it. Also used so the F10
+// addon manager can display WHY a script failed to load.
+void CUserScriptManager::SetScriptError(int iScriptIdx, const char* c_szError)
+{
+	if (iScriptIdx < 0 || iScriptIdx >= (int)m_scripts.size())
+		return;
+	std::string msg = c_szError ? c_szError : "(unknown error)";
+	if (msg.size() > 256) msg.resize(256);		// keep the record bounded
+	m_scripts[iScriptIdx].strLastError = msg;
+}
+
+// Compile + run the top-level chunk for an already-registered record. Shared by
+// the initial directory load and single-script reload.
+void CUserScriptManager::LoadScriptChunk(int iScriptIdx)
+{
+	lua_State* L = m_pLuaState;
+	if (!L || iScriptIdx < 0 || iScriptIdx >= (int)m_scripts.size())
+		return;
+
+	const std::string strPath = m_scripts[iScriptIdx].strPath;
+	const std::string name    = m_scripts[iScriptIdx].strName;
+
+	// Read file bytes (plain disk file; NOT via the eterpack VFS on purpose -
+	// userscripts are meant to be hand-editable by the player).
+	std::ifstream f(strPath, std::ios::binary);
+	if (!f)
+	{
+		TraceError("[USERSCRIPT] cannot open %s", strPath.c_str());
+		m_scripts[iScriptIdx].bFaulted = true;
+		SetScriptError(iScriptIdx, "cannot open file");
+		return;
+	}
+	std::stringstream ss;
+	ss << f.rdbuf();
+	std::string src = ss.str();
+
 	// Build this script's private sandbox environment and stash it.
 	UserScript_PushSandboxEnv(L);				// [env]
 	int envRef = luaL_ref(L, LUA_REGISTRYINDEX);
-	m_scripts[scriptIdx].iEnvRef = envRef;
+	m_scripts[iScriptIdx].iEnvRef = envRef;
 
 	// Compile in TEXT-ONLY mode ("t"): reject precompiled bytecode chunks.
 	std::string chunkName = "@" + name;
 	int rc = luaL_loadbufferx(L, src.data(), src.size(), chunkName.c_str(), "t");
 	if (rc != LUA_OK)
 	{
-		TraceError("[USERSCRIPT] compile error in %s: %s",
-			name.c_str(), lua_tostring(L, -1));
+		const char* err = lua_tostring(L, -1);
+		TraceError("[USERSCRIPT] compile error in %s: %s", name.c_str(), err);
+		SetScriptError(iScriptIdx, err);
 		lua_pop(L, 1);
-		m_scripts[scriptIdx].bFaulted = true;
+		m_scripts[iScriptIdx].bFaulted = true;
 		return;
 	}
 
@@ -285,7 +313,7 @@ void CUserScriptManager::LoadScriptFile(const std::string& strPath)
 		lua_pop(L, 1);							// (no upvalue: e.g. empty file)
 
 	// Run the top-level chunk under the full isolation harness.
-	m_iCurrentScript = scriptIdx;
+	m_iCurrentScript = iScriptIdx;
 	ProtectedBegin();
 	int callrc = lua_pcall(L, 0, 0, 0);			// [ (err?) ]
 	ProtectedEnd();
@@ -293,10 +321,11 @@ void CUserScriptManager::LoadScriptFile(const std::string& strPath)
 
 	if (callrc != LUA_OK)
 	{
-		TraceError("[USERSCRIPT] runtime error loading %s: %s",
-			name.c_str(), lua_tostring(L, -1));
+		const char* err = lua_tostring(L, -1);
+		TraceError("[USERSCRIPT] runtime error loading %s: %s", name.c_str(), err);
+		SetScriptError(iScriptIdx, err);
 		lua_pop(L, 1);
-		m_scripts[scriptIdx].bFaulted = true;
+		m_scripts[iScriptIdx].bFaulted = true;
 	}
 	else
 	{
@@ -326,6 +355,7 @@ void CUserScriptManager::FaultCurrentScript(const char* c_szWhere, const char* c
 		return;
 	SUserScript& sc = m_scripts[m_iCurrentScript];
 	sc.iErrorCount++;
+	SetScriptError(m_iCurrentScript, c_szError);
 	TraceError("[USERSCRIPT] '%s' error in %s: %s",
 		sc.strName.c_str(), c_szWhere, c_szError ? c_szError : "(nil)");
 	if (sc.iErrorCount >= kFaultThreshold && !sc.bFaulted)
@@ -456,21 +486,76 @@ void CUserScriptManager::FireTimers()
 // ---------------------------------------------------------------------------
 void CUserScriptManager::Render()
 {
-	for (SUserScriptWidget& w : m_widgets)
+	// Draw in ascending layer order so a script can place e.g. a background PANEL
+	// behind its TEXT regardless of creation order. We sort a scratch index list
+	// (NOT m_widgets itself - widget handles are indices into it and must stay
+	// stable). std::stable_sort keeps creation order within the same layer.
+	m_drawOrder.clear();
+	m_drawOrder.reserve(m_widgets.size());
+	for (int i = 0; i < (int)m_widgets.size(); ++i)
 	{
-		if (w.bDead || !w.bVisible)
-			continue;
-		// Hide widgets belonging to a disabled/faulted script.
-		if (!ScriptActive(w.iOwnerScript))
-			continue;
+		const SUserScriptWidget& w = m_widgets[i];
+		if (w.bDead || !w.bVisible) continue;
+		if (!ScriptActive(w.iOwnerScript)) continue;
+		m_drawOrder.push_back(i);
+	}
+	std::stable_sort(m_drawOrder.begin(), m_drawOrder.end(),
+		[this](int a, int b) { return m_widgets[a].iLayer < m_widgets[b].iLayer; });
 
-		// RECT/BAR need the 2D graphics singleton; skip them if it is not up yet.
-		if ((w.iType == USERSCRIPT_WIDGET_RECT || w.iType == USERSCRIPT_WIDGET_BAR)
+	for (int idx : m_drawOrder)
+	{
+		SUserScriptWidget& w = m_widgets[idx];
+
+		// Every 2D-primitive widget needs the graphics singleton; skip if not up.
+		if ((w.iType == USERSCRIPT_WIDGET_RECT || w.iType == USERSCRIPT_WIDGET_BAR ||
+			 w.iType == USERSCRIPT_WIDGET_LINE || w.iType == USERSCRIPT_WIDGET_PANEL)
 			&& !CPythonGraphic::InstancePtr())
 			continue;
 
 		switch (w.iType)
 		{
+			case USERSCRIPT_WIDGET_LINE:
+			{
+				CPythonGraphic& g = CPythonGraphic::Instance();
+				g.SetDiffuseColor(w.fR, w.fG, w.fB, w.fA);
+				float th = w.fThickness;
+				if (th <= 1.0f)
+				{
+					g.RenderLine2d(w.fX, w.fY, w.fX2, w.fY2);
+				}
+				else
+				{
+					// Approximate a thick line by stacking thin lines along the
+					// minor axis (cheap; no new primitive needed).
+					float dx = w.fX2 - w.fX, dy = w.fY2 - w.fY;
+					bool horiz = (dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy);
+					int n = (int)th; if (n > 16) n = 16;
+					float start = -(float)(n - 1) * 0.5f;
+					for (int k = 0; k < n; ++k)
+					{
+						float off = start + (float)k;
+						if (horiz) g.RenderLine2d(w.fX, w.fY + off, w.fX2, w.fY2 + off);
+						else       g.RenderLine2d(w.fX + off, w.fY, w.fX2 + off, w.fY2);
+					}
+				}
+				break;
+			}
+			case USERSCRIPT_WIDGET_PANEL:
+			{
+				// Framed container: translucent fill (fBack*) + outline (fR/fG/fB/fA).
+				CPythonGraphic& g = CPythonGraphic::Instance();
+				if (w.fBackA > 0.0f)
+				{
+					g.SetDiffuseColor(w.fBackR, w.fBackG, w.fBackB, w.fBackA);
+					g.RenderBar2d(w.fX, w.fY, w.fX + w.fW, w.fY + w.fH);
+				}
+				if (w.fA > 0.0f)
+				{
+					g.SetDiffuseColor(w.fR, w.fG, w.fB, w.fA);
+					g.RenderBox2d(w.fX, w.fY, w.fX + w.fW, w.fY + w.fH);
+				}
+				break;
+			}
 			case USERSCRIPT_WIDGET_RECT:
 			{
 				// Solid colour panel drawn from the 2D Grp primitive.
@@ -740,6 +825,11 @@ int CUserScriptManager::ScriptErrorCount(int iIdx) const
 	if (iIdx < 0 || iIdx >= (int)m_scripts.size()) return 0;
 	return m_scripts[iIdx].iErrorCount;
 }
+const char* CUserScriptManager::ScriptError(int iIdx) const
+{
+	if (iIdx < 0 || iIdx >= (int)m_scripts.size()) return "";
+	return m_scripts[iIdx].strLastError.c_str();
+}
 
 void CUserScriptManager::SetScriptEnabled(int iIdx, bool bEnabled)
 {
@@ -808,6 +898,71 @@ void CUserScriptManager::ReloadScripts()
 	LoadDisabledSet();
 	LoadDirectory(m_strBaseDir, true);
 	Tracef("[USERSCRIPT] reloaded: %zu script(s)\n", m_scripts.size());
+}
+
+// Free every Lua registry ref and native widget owned by ONE script, without
+// touching any other script's records or widget handles (handles are indices
+// into m_widgets, so entries are marked dead in place, never erased/reordered).
+void CUserScriptManager::FreeScriptResources(int iScriptIdx)
+{
+	lua_State* L = m_pLuaState;
+	if (!L || iScriptIdx < 0 || iScriptIdx >= (int)m_scripts.size())
+		return;
+
+	for (SUserScriptHook& h : m_hooks)
+		if (!h.bDead && h.iOwnerScript == iScriptIdx)
+		{
+			luaL_unref(L, LUA_REGISTRYINDEX, h.iCallbackRef);
+			h.bDead = true;
+		}
+	for (SUserScriptTimer& t : m_timers)
+		if (!t.bDead && t.iOwnerScript == iScriptIdx)
+		{
+			luaL_unref(L, LUA_REGISTRYINDEX, t.iCallbackRef);
+			t.bDead = true;
+		}
+	for (SUserScriptWidget& w : m_widgets)
+		if (!w.bDead && w.iOwnerScript == iScriptIdx)
+		{
+			if (w.pInstance) { delete w.pInstance; w.pInstance = nullptr; }
+			if (w.pImage) { CGraphicImageInstance::Delete(w.pImage); w.pImage = nullptr; }
+			w.bDead = true;
+		}
+	if (m_scripts[iScriptIdx].iEnvRef)
+	{
+		luaL_unref(L, LUA_REGISTRYINDEX, m_scripts[iScriptIdx].iEnvRef);
+		m_scripts[iScriptIdx].iEnvRef = 0;
+	}
+}
+
+// Reload a SINGLE script in place: free its resources, reset its record (keeping
+// its index/identity and persisted enable state), and re-run its file. Other
+// scripts and their widget handles are untouched.
+bool CUserScriptManager::ReloadScript(int iIdx)
+{
+	if (!m_pLuaState || iIdx < 0 || iIdx >= (int)m_scripts.size())
+		return false;
+
+	// Persist this script's pending config so a reload does not lose saved state.
+	FlushDirtyConfigs();
+	FreeScriptResources(iIdx);
+
+	SUserScript& sc = m_scripts[iIdx];
+	// Re-evaluate the persisted enable/disable set (it may have changed on disk).
+	sc.bEnabled = (std::find(m_disabledNames.begin(), m_disabledNames.end(), sc.strName)
+					== m_disabledNames.end());
+	sc.bFaulted     = false;
+	sc.iErrorCount  = 0;
+	sc.iLogBudget   = 0;
+	sc.dLogWindowStart = 0.0;
+	sc.strLastError.clear();
+	sc.configCache.clear();		// drop the in-memory cache; reloaded lazily
+	sc.bConfigLoaded = false;
+	sc.bConfigDirty  = false;
+
+	LoadScriptChunk(iIdx);
+	Tracef("[USERSCRIPT] single-reloaded '%s'\n", sc.strName.c_str());
+	return true;
 }
 
 // ---------------------------------------------------------------------------

@@ -1501,6 +1501,31 @@ bool CPythonPlayer::IsSamePartyMember(DWORD dwVID1, DWORD dwVID2)
 	return (IsPartyMemberByVID(dwVID1) && IsPartyMemberByVID(dwVID2));
 }
 
+// ELEMENTIA-USERSCRIPT: read-only party roster accessors (see header). Iterate
+// the member map (std::map -> ascending PID order gives a stable index) and copy
+// out only display-safe fields. Nothing here mutates any party state.
+int CPythonPlayer::GetPartyMemberCount() const
+{
+	return (int)m_PartyMemberMap.size();
+}
+
+bool CPythonPlayer::GetPartyMemberByArrayIndex(int iArrayIndex, std::string * pstrName,
+	int * piHPPercent, int * piState) const
+{
+	if (iArrayIndex < 0 || iArrayIndex >= (int)m_PartyMemberMap.size())
+		return false;
+	std::map<DWORD, TPartyMemberInfo>::const_iterator itor = m_PartyMemberMap.begin();
+	for (int i = 0; i < iArrayIndex && itor != m_PartyMemberMap.end(); ++i)
+		++itor;
+	if (itor == m_PartyMemberMap.end())
+		return false;
+	const TPartyMemberInfo & rInfo = itor->second;
+	if (pstrName)    *pstrName = rInfo.strName;
+	if (piHPPercent) *piHPPercent = (int)rInfo.byHPPercentage;
+	if (piState)     *piState = (int)rInfo.byState;
+	return true;
+}
+
 // PVP
 void CPythonPlayer::RememberChallengeInstance(DWORD dwVID)
 {

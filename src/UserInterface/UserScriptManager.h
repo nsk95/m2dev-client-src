@@ -52,6 +52,12 @@ enum EUserScriptWidgetType
 	USERSCRIPT_WIDGET_RECT,
 	USERSCRIPT_WIDGET_BAR,
 	USERSCRIPT_WIDGET_ICON,
+	// LINE is a 2D line from (fX,fY) to (fX2,fY2). PANEL is a filled RECT plus an
+	// optional 1px outline border (a "framed container" look) - it is NOT a parent
+	// that owns child widgets; it is drawn exactly like a RECT so it shares the
+	// same trivial lifecycle (no child tracking, no extra cleanup).
+	USERSCRIPT_WIDGET_LINE,
+	USERSCRIPT_WIDGET_PANEL,
 };
 
 // ELEMENTIA-USERSCRIPT: one entry in the throttled "nearby characters" snapshot.
@@ -91,8 +97,12 @@ struct SUserScriptWidget
 	CGraphicImageInstance*	pImage = nullptr;		// ICON only (pooled New/Delete)
 	float					fX = 0.0f;
 	float					fY = 0.0f;
-	float					fW = 0.0f;				// RECT/BAR size
+	float					fW = 0.0f;				// RECT/BAR/PANEL size
 	float					fH = 0.0f;
+	float					fX2 = 0.0f;				// LINE end point
+	float					fY2 = 0.0f;
+	float					fThickness = 1.0f;		// LINE thickness (px, >=1)
+	int						iLayer = 0;				// draw order (low draws first)
 	float					fProgress = 1.0f;		// BAR fill fraction (0..1)
 	// Primary colour: TEXT is handled by the text instance; RECT fill / BAR
 	// foreground use these; BAR background uses the fBack* set.
@@ -120,6 +130,9 @@ struct SUserScript
 	bool		bEnabled = true;
 	bool		bFaulted = false;	// disabled after a runtime fault
 	int			iErrorCount = 0;
+	// Last compile/runtime error text (shown by the F10 addon manager so a load
+	// failure is diagnosable in-game). Capped in length when stored.
+	std::string	strLastError;
 	int			iLogBudget = 0;		// remaining log lines this second
 	double		dLogWindowStart = 0.0;
 
@@ -215,8 +228,13 @@ class CUserScriptManager : public CSingleton<CUserScriptManager>
 		bool  ScriptEnabled(int iIdx) const;
 		bool  ScriptFaulted(int iIdx) const;
 		int   ScriptErrorCount(int iIdx) const;
+		const char* ScriptError(int iIdx) const;	// last error text ("" if none)
 		void  SetScriptEnabled(int iIdx, bool bEnabled);
 		void  ReloadScripts();
+		// Reload a SINGLE script in place (re-read its file, rebuild its sandbox
+		// env). Used by the F10 manager's per-addon reload button. Returns false on
+		// a bad index; preserves the persisted enable/disable set.
+		bool  ReloadScript(int iIdx);
 
 		// Used by the instruction-count hook to abort runaway scripts.
 		bool DeadlineExceeded() const
@@ -231,6 +249,13 @@ class CUserScriptManager : public CSingleton<CUserScriptManager>
 	private:
 		void  LoadDirectory(const std::string& strDir, bool bEnabledDir);
 		void  LoadScriptFile(const std::string& strPath);
+		// Build the sandbox env for an already-registered script record, compile
+		// its file (text-only) and run its top-level chunk under the isolation
+		// harness. Shared by initial load and single-script reload. On failure it
+		// sets bFaulted + strLastError on the record.
+		void  LoadScriptChunk(int iScriptIdx);
+		void  SetScriptError(int iScriptIdx, const char* c_szError);
+		void  FreeScriptResources(int iScriptIdx);	// unref hooks/timers/widgets/env
 		void  DispatchEvent(int iEvent, double dArg);
 		void  FireTimers();
 		void  FaultCurrentScript(const char* c_szWhere, const char* c_szError);
@@ -256,6 +281,7 @@ class CUserScriptManager : public CSingleton<CUserScriptManager>
 		std::vector<SUserScriptHook>	m_hooks;
 		std::vector<SUserScriptTimer>	m_timers;
 		std::vector<SUserScriptWidget>	m_widgets;
+		std::vector<int>				m_drawOrder;	// scratch: layer-sorted draw list
 
 		int		m_iCurrentScript = -1;	// index of the script currently running
 		double	m_dGlobalTime = 0.0;
