@@ -45,6 +45,13 @@ class CResourceManager : public CSingleton<CResourceManager>
 		void		ProcessBackgroundLoading();
 		void		PushBackgroundLoadingSet(std::set<std::string> & LoadingSet);
 
+		// Backlog #98: cap GPU uploads (texture creation via OnLoad) processed
+		// per ProcessBackgroundLoading() call. 0 == unlimited (historical
+		// drain-all behaviour). A finite value spreads a map-warp / bulk load
+		// burst across frames so it no longer stalls a single frame.
+		static void		SetBackgroundUploadBudget(unsigned uMaxPerFrame);
+		static unsigned	GetBackgroundUploadBudget();
+
 		CTextureCache* GetTextureCache() { return m_pTextureCache; }
 
 	protected:
@@ -73,6 +80,7 @@ class CResourceManager : public CSingleton<CResourceManager>
 		TResourceRefDecreaseWaitingMap			m_pResRefDecreaseWaitingMap;
 
 		static CFileLoaderThread				ms_loadingThread;
+		static unsigned							ms_uBackgroundUploadBudget;
 		CTextureCache*							m_pTextureCache;
 
 		mutable std::mutex						m_ResourceMapMutex;  // Thread-safe resource map access

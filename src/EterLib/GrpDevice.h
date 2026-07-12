@@ -49,6 +49,15 @@ public:
 	bool			ResizeBackBuffer(UINT uWidth, UINT uHeight);
 	void			RegisterWarningString(UINT uiMsg, const char * c_szString);
 
+	// Backlog #98: opt-in D3DCREATE_MULTITHREADED. Default OFF (preserves the
+	// current single-thread device behaviour and its performance). Call BEFORE
+	// Create() to make the D3D9Ex device safe for resource creation from worker
+	// threads. Required only if the async area/texture loaders are wired to
+	// create GPU resources off the render/device thread; the active file-loader
+	// path keeps GPU uploads on the main thread and does NOT need this.
+	static void		SetMultiThreadedDeviceMode(bool bEnable);
+	static bool		GetMultiThreadedDeviceMode();
+
 protected:
 	void __Initialize();
 	void __WarningMessage(HWND hWnd, UINT uiMsg);
@@ -71,4 +80,6 @@ protected:
 	DWORD						m_uBackBufferCount;
 	std::map<UINT, std::string>	m_kMap_strWarningMessage;
 	CStateManager*				m_pStateManager;
+
+	static bool					ms_bMultiThreadedDevice;	// Backlog #98
 };
