@@ -69,10 +69,32 @@ bool CActorInstance::CanUseSkill()
 
 bool CActorInstance::CanMove()
 {
-	if (!CanAct())
+	bool bCanAct = CanAct();
+	bool bLock   = isLock();
+
+	// ELEMENTIA-DIAG (temporaer): Wenn ein Spieler-Char nicht laufen kann, EINMAL
+	// pro Sekunde den genauen Grund nach syserr.txt schreiben. Nur fuer Spieler-
+	// Rassen (0..MAIN_RACE_MAX_NUM-1), damit Mobs kein Rauschen erzeugen. Erfasst
+	// auch den Physik-Blend-Fall (pushing), der zwar CanMove nicht blockt, aber
+	// die Move-Paket-Emission in Transform via __IsSyncing verhindert.
+	if (GetRace() < MAIN_RACE_MAX_NUM)
+	{
+		static DWORD s_dwLastDiag = 0;
+		DWORD dwNow = ELTimer_GetMSec();
+		if ((!bCanAct || bLock || IsPushing()) && (dwNow - s_dwLastDiag > 1000))
+		{
+			s_dwLastDiag = dwNow;
+			TraceError("ELEMENTIA-DIAG move-blocked race=%u motion=%d | dead=%d stun=%d para=%d faint=%d sleep=%d isLock=%d pushing=%d",
+				GetRace(), (int)__GetCurrentMotionIndex(),
+				(int)IsDead(), (int)IsStun(), (int)IsParalysis(), (int)IsFaint(), (int)IsSleep(),
+				(int)bLock, (int)IsPushing());
+		}
+	}
+
+	if (!bCanAct)
 		return false;
 
-	if (isLock())
+	if (bLock)
 		return false;
 
 	return true;
