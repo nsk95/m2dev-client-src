@@ -77,7 +77,7 @@ bool CActorInstance::CanMove()
 	// Rassen (0..MAIN_RACE_MAX_NUM-1), damit Mobs kein Rauschen erzeugen. Erfasst
 	// auch den Physik-Blend-Fall (pushing), der zwar CanMove nicht blockt, aber
 	// die Move-Paket-Emission in Transform via __IsSyncing verhindert.
-	if (GetRace() < MAIN_RACE_MAX_NUM)
+	if (GetRace() < 8)   // Spieler-Rassen 0..7 (MAIN_RACE_MAX_NUM hier nicht sichtbar)
 	{
 		static DWORD s_dwLastDiag = 0;
 		DWORD dwNow = ELTimer_GetMSec();
