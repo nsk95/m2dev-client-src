@@ -131,7 +131,21 @@ bool CPythonNetworkStream::RecvMainCharacter()
 			__SetFieldMusicFileName(pack.szBGMName);
 	}
 
-	PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_LOAD], "LoadData", Py_BuildValue("(ii)", pack.lX, pack.lY));
+	// ELEMENTIA DirectEnter/Handoff-Fix: Auf dem Handoff-Boot (Launcher startet
+	// direkt ins Spiel) durchlaeuft der Client NICHT die Login-/Select-Screens,
+	// die das Python-Ladefenster via SetPhaseWindow(PHASE_WINDOW_LOAD, ...)
+	// registrieren. Dadurch ist m_apoPhaseWnd[PHASE_WINDOW_LOAD] == NULL, der
+	// LoadData-Aufruf ist ein stiller No-Op -> net.Warp -> CPythonBackground::Warp
+	// laufen nie -> Terrain-Hoehe/Attribut werden nie geladen und die Koordinaten-
+	// Basis (m_dwBaseX/Y) bleibt 0. Folge: Char sinkt auf Z=0 (halb im Boden) und
+	// jeder Zielpunkt gilt als blockiert -> der Client sendet nie ein CG_MOVE
+	// (keine Laufanimation). In diesem Fall das Terrain direkt in C++ warpen; die
+	// globalen Coords aus pack sind exakt das, was Warp() erwartet. Der normale
+	// Login-Pfad (Ladefenster registriert) bleibt unveraendert.
+	if (m_apoPhaseWnd[PHASE_WINDOW_LOAD] == NULL)
+		Warp(pack.lX, pack.lY);
+	else
+		PyCallClassMemberFunc(m_apoPhaseWnd[PHASE_WINDOW_LOAD], "LoadData", Py_BuildValue("(ii)", pack.lX, pack.lY));
 
 	SendClientVersionPacket();
 	return true;
