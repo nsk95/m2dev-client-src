@@ -3126,6 +3126,12 @@ void CInstanceBase::__Initialize()
 	m_swordRefineEffectLeft = 0;
 	m_armorRefineEffect = 0;
 
+	// ELEMENTIA-COSMETIC: no cosmetic attached on a fresh instance.
+	m_dwElementiaGlowEffect = 0;
+	m_dwElementiaAuraEffect = 0;
+	m_dwElementiaWingEffect = 0;
+	m_iElementiaElement = ELEMENTIA_ELEMENT_NONE;
+
 	m_sAlignment = 0;
 	m_byPKMode = 0;
 	m_isKiller = false;

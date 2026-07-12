@@ -586,6 +586,47 @@ PyObject * chrmgrRegisterCacheEffect(PyObject* poSelf, PyObject* poArgs)
 	return Py_BuildNone();
 }
 
+// ELEMENTIA-COSMETIC: apply purely-visual element cosmetics to an instance by VID.
+// Args: (vid, element[, glow=1, aura=0, wing=0]); element = 0..3 (Fire/Water/Earth/Air).
+// Cosmetic only - no stats, no hitbox, no visibility change; server stays authoritative.
+PyObject * chrmgrSetElementiaCosmetic(PyObject* poSelf, PyObject* poArgs)
+{
+	int iVID;
+	if (!PyTuple_GetInteger(poArgs, 0, &iVID))
+		return Py_BadArgument();
+
+	int iElement;
+	if (!PyTuple_GetInteger(poArgs, 1, &iElement))
+		return Py_BadArgument();
+
+	int iGlow = 1, iAura = 0, iWing = 0;
+	if (PyTuple_Size(poArgs) > 2) PyTuple_GetInteger(poArgs, 2, &iGlow);
+	if (PyTuple_Size(poArgs) > 3) PyTuple_GetInteger(poArgs, 3, &iAura);
+	if (PyTuple_Size(poArgs) > 4) PyTuple_GetInteger(poArgs, 4, &iWing);
+
+	CInstanceBase * pkInst = CPythonCharacterManager::Instance().GetInstancePtr(iVID);
+	if (!pkInst)
+		return Py_BuildNone();
+
+	pkInst->SetElementiaCosmetic(iElement, iGlow != 0, iAura != 0, iWing != 0);
+	return Py_BuildNone();
+}
+
+// ELEMENTIA-COSMETIC: remove all element cosmetics from an instance by VID.
+PyObject * chrmgrClearElementiaCosmetic(PyObject* poSelf, PyObject* poArgs)
+{
+	int iVID;
+	if (!PyTuple_GetInteger(poArgs, 0, &iVID))
+		return Py_BadArgument();
+
+	CInstanceBase * pkInst = CPythonCharacterManager::Instance().GetInstancePtr(iVID);
+	if (!pkInst)
+		return Py_BuildNone();
+
+	pkInst->ClearElementiaCosmetic();
+	return Py_BuildNone();
+}
+
 PyObject * chrmgrSetDustGap(PyObject* poSelf, PyObject* poArgs)
 {
 	int nGap;
@@ -754,6 +795,8 @@ void initchrmgr()
 		{ "IsPossibleEmoticon",			chrmgrIsPossibleEmoticon,				METH_VARARGS },
 		{ "RegisterEffect",				chrmgrRegisterEffect,					METH_VARARGS },
 		{ "RegisterCacheEffect",		chrmgrRegisterCacheEffect,				METH_VARARGS },
+		{ "SetElementiaCosmetic",		chrmgrSetElementiaCosmetic,				METH_VARARGS },
+		{ "ClearElementiaCosmetic",		chrmgrClearElementiaCosmetic,			METH_VARARGS },
 		{ "RegisterPointEffect",		chrmgrRegisterPointEffect,				METH_VARARGS },
 		{ "ShowPointEffect",			chrmgrShowPointEffect,					METH_VARARGS },
 		{ "ToggleDirectionLine",		chrmgrToggleDirectionLine,				METH_VARARGS },
@@ -849,4 +892,13 @@ void initchrmgr()
 	PyModule_AddIntConstant(poModule, "EFFECT_LOVE_PENDANT_EQUIP",		CInstanceBase::EFFECT_LOVE_PENDANT_EQUIP);
 	
 	PyModule_AddIntConstant(poModule, "EFFECT_AGGREGATE_MONSTER",			CInstanceBase::EFFECT_AGGREGATE_MONSTER);
+
+	// ELEMENTIA-COSMETIC: base slot indices for element cosmetics + element enum values.
+	PyModule_AddIntConstant(poModule, "EFFECT_ELEMENTIA_WEAPON_GLOW",		CInstanceBase::EFFECT_ELEMENTIA_WEAPON_GLOW);
+	PyModule_AddIntConstant(poModule, "EFFECT_ELEMENTIA_AURA",				CInstanceBase::EFFECT_ELEMENTIA_AURA);
+	PyModule_AddIntConstant(poModule, "EFFECT_ELEMENTIA_WING",				CInstanceBase::EFFECT_ELEMENTIA_WING);
+	PyModule_AddIntConstant(poModule, "ELEMENTIA_ELEMENT_FIRE",				CInstanceBase::ELEMENTIA_ELEMENT_FIRE);
+	PyModule_AddIntConstant(poModule, "ELEMENTIA_ELEMENT_WATER",				CInstanceBase::ELEMENTIA_ELEMENT_WATER);
+	PyModule_AddIntConstant(poModule, "ELEMENTIA_ELEMENT_EARTH",				CInstanceBase::ELEMENTIA_ELEMENT_EARTH);
+	PyModule_AddIntConstant(poModule, "ELEMENTIA_ELEMENT_AIR",				CInstanceBase::ELEMENTIA_ELEMENT_AIR);
 }

@@ -373,7 +373,28 @@ class CInstanceBase
 			EFFECT_LOVE_PENDANT_EQUIP,				// 행복의 반지 착용 순간에 발동하는 이펙트
 			EFFECT_TEMP,
 			EFFECT_AGGREGATE_MONSTER,
+			// ELEMENTIA-COSMETIC: purely visual element cosmetics (no stats, no gameplay).
+			// Four contiguous slots each = Fire(0)/Water(1)/Earth(2)/Air(3).
+			// Effect files + attach bones are registered at load time by the game UI via
+			// CInstanceBase::RegisterEffect (chrmgr.RegisterEffect binding); render only.
+			EFFECT_ELEMENTIA_WEAPON_GLOW,                                       // weapon bone (PART_WEAPON)
+			EFFECT_ELEMENTIA_WEAPON_GLOW_END = EFFECT_ELEMENTIA_WEAPON_GLOW + 4,
+			EFFECT_ELEMENTIA_AURA,                                              // body/root bone
+			EFFECT_ELEMENTIA_AURA_END = EFFECT_ELEMENTIA_AURA + 4,
+			EFFECT_ELEMENTIA_WING,                                              // back bone (effect-wings)
+			EFFECT_ELEMENTIA_WING_END = EFFECT_ELEMENTIA_WING + 4,
 			EFFECT_NUM,
+		};
+
+		// ELEMENTIA-COSMETIC: element indices for the four element optics.
+		enum EElementiaElement
+		{
+			ELEMENTIA_ELEMENT_NONE  = -1,
+			ELEMENTIA_ELEMENT_FIRE  = 0,
+			ELEMENTIA_ELEMENT_WATER = 1,
+			ELEMENTIA_ELEMENT_EARTH = 2,
+			ELEMENTIA_ELEMENT_AIR   = 3,
+			ELEMENTIA_ELEMENT_NUM   = 4,
 		};
 
 		enum
@@ -420,6 +441,12 @@ class CInstanceBase
 	public:		
 		void CreateSpecialEffect(DWORD iEffectIndex);
 		void AttachSpecialEffect(DWORD effect);
+
+		// ELEMENTIA-COSMETIC: apply/clear purely-visual element cosmetics on THIS instance.
+		// iElement is one of EElementiaElement (Fire/Water/Earth/Air); bGlow/bAura/bWing pick
+		// which optics show. No stats, no hitbox/reach, no visibility change - render only.
+		void SetElementiaCosmetic(int iElement, bool bGlow, bool bAura, bool bWing);
+		void ClearElementiaCosmetic();
 
 	protected:
 		static std::string ms_astAffectEffectAttachBone[EFFECT_NUM];
@@ -985,6 +1012,12 @@ class CInstanceBase
 		DWORD					m_swordRefineEffectRight;
 		DWORD					m_swordRefineEffectLeft;
 		DWORD					m_armorRefineEffect;
+
+		// ELEMENTIA-COSMETIC: attached cosmetic effect ids (0 = none) + current element.
+		DWORD					m_dwElementiaGlowEffect;
+		DWORD					m_dwElementiaAuraEffect;
+		DWORD					m_dwElementiaWingEffect;
+		int						m_iElementiaElement;
 
 		struct SMoveAfterFunc
 		{

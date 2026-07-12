@@ -227,6 +227,57 @@ void CInstanceBase::CreateSpecialEffect(DWORD iEffectIndex)
 	CEffectManager::Instance().SetEffectInstanceGlobalMatrix(c_rmatGlobal);
 }
 
+// ELEMENTIA-COSMETIC -------------------------------------------------------------------
+// Purely visual: attach/detach registered element effects (weapon-glow, aura,
+// effect-wings) on this instance. These are cosmetic effect instances only - they carry
+// NO stat change, NO hitbox/reach change and NO visibility manipulation. The server stays
+// authoritative for every gameplay value; this touches the local render only.
+void CInstanceBase::ClearElementiaCosmetic()
+{
+	if (m_dwElementiaGlowEffect)
+	{
+		__DetachEffect(m_dwElementiaGlowEffect);
+		m_dwElementiaGlowEffect = 0;
+	}
+	if (m_dwElementiaAuraEffect)
+	{
+		__DetachEffect(m_dwElementiaAuraEffect);
+		m_dwElementiaAuraEffect = 0;
+	}
+	if (m_dwElementiaWingEffect)
+	{
+		__DetachEffect(m_dwElementiaWingEffect);
+		m_dwElementiaWingEffect = 0;
+	}
+	m_iElementiaElement = ELEMENTIA_ELEMENT_NONE;
+}
+
+void CInstanceBase::SetElementiaCosmetic(int iElement, bool bGlow, bool bAura, bool bWing)
+{
+	// Always clear the previous cosmetic first so switching element/optics never stacks.
+	ClearElementiaCosmetic();
+
+	// Guard the element index; out-of-range simply means "no cosmetic".
+	if (iElement < ELEMENTIA_ELEMENT_FIRE || iElement >= ELEMENTIA_ELEMENT_NUM)
+		return;
+
+	// Player characters only (never mobs/NPCs/objects) - keeps it a strict vanity feature.
+	if (!IsPC())
+		return;
+
+	m_iElementiaElement = iElement;
+
+	// __AttachEffect returns 0 when the slot's effect file was not registered (missing
+	// content), so an unshipped element optic simply shows nothing - it never crashes.
+	if (bGlow)
+		m_dwElementiaGlowEffect = __AttachEffect(EFFECT_ELEMENTIA_WEAPON_GLOW + iElement);
+	if (bAura)
+		m_dwElementiaAuraEffect = __AttachEffect(EFFECT_ELEMENTIA_AURA + iElement);
+	if (bWing)
+		m_dwElementiaWingEffect = __AttachEffect(EFFECT_ELEMENTIA_WING + iElement);
+}
+// -- END OF ELEMENTIA-COSMETIC ---------------------------------------------------------
+
 void CInstanceBase::__EffectContainer_Destroy()
 {
 	SEffectContainer::Dict& rkDctEftID=__EffectContainer_GetDict();
