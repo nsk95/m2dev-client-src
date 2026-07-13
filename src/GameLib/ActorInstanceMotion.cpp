@@ -491,6 +491,16 @@ BOOL CActorInstance::isLock()
 		case CRaceMotionData::NAME_SPECIAL_4:
 		case CRaceMotionData::NAME_SPECIAL_5:
 		case CRaceMotionData::NAME_SPECIAL_6:
+			// ELEMENTIA Safety-Net: Attack/Combo/Special sind kurze Motionen. Laeuft
+			// eine solche Motion laenger als jede echte Attacke (kaputte/fehlende
+			// Motion-Duration oder in CurrentMotionProcess fehlgeschlagener
+			// WAIT-Rueckweg), darf sie den Char nicht DAUERHAFT bewegungsunfaehig
+			// einsperren -> nach 2s Timeout entsperren, damit Movement nie permanent
+			// blockiert. Emotes/Fishing/Dances (unten) bleiben absichtlich unveraendert.
+			if (GetLocalTime() - m_kCurMotNode.fStartTime > 2.0f)
+				return FALSE;   // ueberfaellige Attack-Motion -> Bewegung freigeben
+			return TRUE;
+
 		case CRaceMotionData::NAME_FISHING_THROW:
 		case CRaceMotionData::NAME_FISHING_WAIT:
 		case CRaceMotionData::NAME_FISHING_STOP:
